@@ -1,0 +1,10 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/claude-sessions" },
+    { "path": "packages/codex-sessions" },
+    { "path": "packages/analyze" },
+    { "path": "packages/cli" }
+  ]
+}
