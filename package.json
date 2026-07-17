@@ -10,6 +10,8 @@
     "build": "tsc -b",
     "clean": "tsc -b --clean",
     "test": "vitest run",
+    "test:e2e": "pnpm build && vitest run -c vitest.e2e.config.ts",
+    "e2e:setup": "tsx scripts/e2e-setup.ts",
     "asa": "node packages/cli/bin/asa.js"
   },
   "devDependencies": {

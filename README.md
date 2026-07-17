@@ -60,10 +60,36 @@ the token-counting gotchas.
 ```sh
 pnpm install
 pnpm build        # tsc -b project references
-pnpm test         # vitest, runs against src (no build needed)
+pnpm test         # unit tests (vitest, runs against src, no build needed)
 ```
 
 Honors `CLAUDE_CONFIG_DIR` and `CODEX_HOME` overrides.
+
+### E2E tests
+
+The e2e suite runs the built `asa` binary as a subprocess against fixture sessions in
+gitignored repo-local homes (`.e2e/claude-home`, `.e2e/codex-home`), selected via the
+same `CLAUDE_CONFIG_DIR` / `CODEX_HOME` overrides the packages honor.
+
+```sh
+pnpm e2e:setup --synthetic   # hand-written format-faithful fixtures; no auth, no cost
+pnpm e2e:setup               # REAL fixtures: one tiny claude -p (haiku) + codex exec run
+pnpm test:e2e                # builds, then runs e2e/ (skips suites whose fixture is missing)
+```
+
+Real mode needs auth inside the isolated homes:
+
+- **claude** (macOS): credentials live in the Keychain, which an isolated
+  `CLAUDE_CONFIG_DIR` can't see. Run `claude setup-token` once and either
+  `export CLAUDE_CODE_OAUTH_TOKEN=<token>` or write it to `.e2e/claude-token`
+  (chmod 600). On Linux the setup script copies `~/.claude/.credentials.json` instead.
+- **codex**: the setup script copies `~/.codex/auth.json` into `.e2e/codex-home/`.
+
+The setup script refuses to run unless git confirms `.e2e/` is ignored, so session
+transcripts and copied auth state can never end up in a commit. Fixture generation is
+idempotent (`--force` to regenerate); the suite itself never needs auth — real Claude
+session generation forces a fixed session id (`--session-id`), and tests discover
+whatever fixtures exist.
 
 ## Later / ideas
 

@@ -128,6 +128,53 @@ describe('normalizeClaudeRecords', () => {
   });
 });
 
+describe('normalizeClaudeRecords — compaction and subagents', () => {
+  it('counts compact summaries without treating them as steps', () => {
+    const records = fixtureRecords();
+    records.push({
+      sessionId: SESSION_ID,
+      type: 'user',
+      uuid: 'compact1',
+      isCompactSummary: true,
+      compactMetadata: { trigger: 'auto', preTokens: 150000 },
+      message: { role: 'user', content: 'This session is being continued from…' },
+    });
+    const session = normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`);
+    expect(session.compactions).toBe(1);
+    expect(session.steps.map((s) => s.id)).toEqual(['u1', 'u3']);
+  });
+
+  it('collects subagent info from toolUseResult', () => {
+    const records = fixtureRecords();
+    records.push({
+      sessionId: SESSION_ID,
+      type: 'user',
+      uuid: 'u4',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'toolu_agent', content: 'done' }],
+      },
+      toolUseResult: {
+        agentId: 'a1b2c3',
+        agentType: 'Explore',
+        totalTokens: 55300,
+        totalToolUseCount: 21,
+        totalDurationMs: 806000,
+      },
+    });
+    const session = normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`);
+    expect(session.subagents).toEqual([
+      { id: 'a1b2c3', agentType: 'Explore', totalTokens: 55300, toolUseCount: 21, durationMs: 806000 },
+    ]);
+  });
+
+  it('captures the ai-title', () => {
+    const records = fixtureRecords();
+    records.push({ type: 'ai-title', aiTitle: 'My session', sessionId: SESSION_ID });
+    expect(normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`).title).toBe('My session');
+  });
+});
+
 describe('forkClaudeSessionAtStep', () => {
   it('truncates after the chosen step under a new session id', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
@@ -142,5 +189,23 @@ describe('forkClaudeSessionAtStep', () => {
     expect(records.every((r) => r.sessionId === fork.newSessionId)).toBe(true);
     expect(fork.newFilePath).toBe(join(dir, `${fork.newSessionId}.jsonl`));
     expect(fork.droppedRecords).toBe(3);
+  });
+
+  it('forking at the last step keeps everything except bookkeeping records', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+
+    const fork = await forkClaudeSessionAtStep(filePath, 'u3');
+    const records = parseJsonl<ClaudeRecord>(await readFile(fork.newFilePath, 'utf8'));
+    expect(records.map((r) => r.uuid)).toEqual(['u1', 'a1', 'a2', 'u2', 'u3', 'a3']);
+    expect(fork.droppedRecords).toBe(0);
+  });
+
+  it('throws for an unknown step uuid', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    await expect(forkClaudeSessionAtStep(filePath, 'nope')).rejects.toThrow(/No record with uuid/);
   });
 });

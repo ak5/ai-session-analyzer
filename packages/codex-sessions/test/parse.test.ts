@@ -124,6 +124,15 @@ describe('normalizeCodexLines', () => {
     expect(session.steps[0]!.durationMs).toBe(4000);
   });
 
+  it('tracks fork lineage and compactions', () => {
+    const lines = fixtureLines();
+    lines[0]!.payload!.forked_from_id = '019f0000-dead-7000-8000-000000000099';
+    lines.push({ timestamp: '2026-07-17T10:02:00Z', type: 'compacted', payload: { window_number: 1 } });
+    const forked = normalizeCodexLines(lines, `/x/rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    expect(forked.forkedFromId).toBe('019f0000-dead-7000-8000-000000000099');
+    expect(forked.compactions).toBe(1);
+  });
+
   it('links tool calls and classifies MCP tools', () => {
     const step1 = session.steps[0]!;
     expect(step1.toolCalls[0]!.name).toBe('exec');
