@@ -360,9 +360,20 @@ describe.skipIf(!codexId)(`codex e2e ${codexId ?? `(${setupHint})`}`, () => {
     expect(res.stdout).toContain(`codex resume ${codexId}`);
   });
 
-  it('rejects --at for codex forks (short flag)', async () => {
-    const res = await asa('fork', '-o', codexId!, '--at', 'e2e-turn-1');
-    expect(res.code).toBe(1);
-    expect(res.stderr).toContain('--at is not supported for codex sessions yet (only: claude)');
+  it('forks codex at a step and the fork analyzes with lineage (short flag)', async () => {
+    const res = await asa('fork', '-o', codexId!, '--at', 'e2e-turn-1', '--no-launch');
+    expect(res.code).toBe(0);
+    const newId = /session ([0-9a-f-]{36})/.exec(res.stdout)?.[1];
+    const newFile = /^\s+(\/.*\.jsonl)$/m.exec(res.stdout)?.[1];
+    expect(newId && newFile && existsSync(newFile)).toBeTruthy();
+    try {
+      const reAnalyzed = await asa('analyze', '-o', newId!, '--json');
+      expect(reAnalyzed.code).toBe(0);
+      const session = JSON.parse(reAnalyzed.stdout).session;
+      expect(session.forkedFromId).toBe(codexId);
+      expect(session.steps.length).toBe(1);
+    } finally {
+      if (newFile) rmSync(newFile, { force: true });
+    }
   });
 });

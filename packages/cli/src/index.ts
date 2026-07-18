@@ -45,7 +45,9 @@ import {
   renderModelReport,
   steeringSamples,
 } from '@asa/meta';
-import { installGitTraceHooks, resolveRepoRoot } from './hooks-install.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { colocateJj, installGitTraceHooks, resolveRepoRoot } from './hooks-install.js';
 import { enrichRefs, groupByProject, type ListedRef } from './list.js';
 import { spawnAgentCli } from './spawn.js';
 
@@ -148,7 +150,7 @@ Use cases:
 
   Study yourself as a prompter (30 days, both agents)
     $ asa prompter --since 30d --limit 50
-    $ asa prompter --deep                        # + LLM-judge pass via claude -p (haiku)
+    $ asa prompter --deep                        # + LLM-judge pass (claude haiku; --deep codex works too)
 
   Find what to extract into skills, rules, FAQs, automations
     $ asa distill --since 60d                    # deterministic recurrence stats, local only
@@ -174,7 +176,7 @@ program
       'and profile the human driving them. Wraps the real claude/codex binaries; never\n' +
       'reimplements them. Session ids accept unique prefixes everywhere.',
   )
-  .version('1.0.0-rc.3')
+  .version('1.0.0-rc.4')
   .addHelpText('after', USE_CASES);
 
 function listRow(ref: ListedRef | SessionRef, indent = ''): string {
@@ -338,7 +340,7 @@ program
   .option('-n, --limit <n>', 'max sessions to load (newest first)', '25')
   .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
   .option('--include-subagents', 'keep agent-spawned sessions (their prompts are machine-written)')
-  .option('--deep', 'add an LLM-judge pass: sampled prompts graded via `claude -p` (haiku)')
+  .option('--deep [backend]', 'add an LLM-judge pass: sampled prompts graded via claude (haiku, default) or codex')
   .option('--sample <k>', 'prompts to sample for --deep', '10')
   .option('--yes', 'skip the token-estimate confirmation for --deep')
   .option('--model <model>', 'judge model for --deep', 'haiku')
@@ -364,7 +366,7 @@ Examples:
       limit: string;
       since?: string;
       includeSubagents?: boolean;
-      deep?: boolean;
+      deep?: boolean | string;
       yes?: boolean;
       sample: string;
       model: string;
@@ -376,17 +378,24 @@ Examples:
 
       let judge: JudgeResult | undefined;
       if (opts.deep) {
+        const backend = opts.deep === true ? 'claude' : opts.deep;
+        if (backend !== 'claude' && backend !== 'codex') {
+          throw new Error(`--deep must be claude or codex, got "${backend}"`);
+        }
         const samples = selectJudgeSamples(sessions.flatMap(collectStepSignals), Number(opts.sample));
         const approved = await confirmModelCall({
           label: `--deep judge (${samples.length} sampled prompts)`,
-          backend: 'claude',
+          backend,
           prompt: buildJudgePrompt(samples),
           outputEstimate: [200, 1500],
           yes: opts.yes,
         });
         if (approved) {
           try {
-            judge = await judgePrompts(samples, { model: opts.model });
+            judge = await judgePrompts(samples, {
+              backend,
+              model: backend === 'claude' ? opts.model : undefined,
+            });
           } catch (err) {
             console.error(
               `--deep judge failed (${err instanceof Error ? err.message : err}) — continuing without it`,
@@ -567,7 +576,7 @@ Examples:
 program
   .command('setup')
   .description(
-    'Onboarding: environment report, then optional confirmed steps — raise Claude transcript retention (globally), and install per-prompt git tracing (+ jj colocation) into the current repo',
+    'Onboarding: environment report, then independently-confirmed optional steps — raise Claude transcript retention (global), install per-prompt git tracing (repo), colocate jj for op-log snapshots (repo)',
   )
   .option('--retention-days <n>', 'retention to offer', String(DEFAULT_RETENTION_DAYS))
   .option('--no-jj', 'skip offering jj colocation with the repo hooks')
@@ -602,12 +611,26 @@ program
     }
     if (repoRoot) {
       console.log(
-        `\nOptional: install per-prompt git tracing into ${repoRoot}` +
-          `${opts.jj ? ' (+ jj colocation for op-log snapshots of AI edits)' : ''} — asa analyze then shows the commit each prompt ran against.`,
+        `\nOptional: install per-prompt git tracing into ${repoRoot} — asa analyze then shows the commit each prompt ran against.`,
       );
       if (await askYesNo('  install? [y/N] ', opts.yes, 'hooks not installed')) {
-        const { actions } = installGitTraceHooks(repoRoot, { jj: opts.jj });
+        const { actions } = installGitTraceHooks(repoRoot, { jj: false });
         for (const action of actions) console.log(`  · ${action}`);
+      } else {
+        console.log('Skipped.');
+      }
+    }
+
+    // step 3 (per-repo, its own opt-in): jj colocation
+    if (repoRoot && opts.jj && !existsSync(join(repoRoot, '.jj'))) {
+      console.log(
+        `\nOptional: colocate a jj repo in ${repoRoot} (jj git init --colocate). The trace hook then` +
+          `\nsnapshots the working copy into jj's op log every turn — commit-free, diffable history of` +
+          `\nwhat the agent changed between prompts (jj op log / jj op diff), and a base for undo/replay` +
+          `\ntooling. Fully reversible: delete .jj/ to leave.`,
+      );
+      if (await askYesNo('  colocate? [y/N] ', opts.yes, 'jj not colocated')) {
+        console.log(`  · ${colocateJj(repoRoot)}`);
       } else {
         console.log('Skipped.');
       }

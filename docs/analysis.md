@@ -28,9 +28,10 @@ both agents.
 - **Skill curve**: weekly correction/interruption/specificity trend.
 - **Correlations**: Pearson across sessions (e.g. specificity vs correction rate),
   printed with sample size; treat |r| < 0.3 or small n as noise.
-- **`--deep`**: samples corrected-then-longest prompts and grades clarity/context
-  1–5 via one batched `claude -p` haiku call with `--no-session-persistence`, so
-  judging never pollutes the session store it analyzes.
+- **`--deep [claude|codex]`**: samples corrected-then-longest prompts and grades
+  clarity/context 1–5 via one batched headless call — claude (haiku, default,
+  --no-session-persistence) or codex (rollout stamped [asa-internal] and excluded
+  from analysis), so judging never pollutes the session store it analyzes.
 
 - **Workflow section**: session-level hygiene from the same scope.
   *Compaction pressure* — sessions that hit `/compact` (or auto-compaction), with

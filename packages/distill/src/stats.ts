@@ -3,13 +3,8 @@ import { collectStepSignals, type StepSignal } from '@asa/prompter';
 import { clusterPrompts, type PromptCluster } from './cluster.js';
 import { mineToolSequences, type SequenceStat } from './sequences.js';
 
-/**
- * Prefix stamped on every prompt asa itself sends to an agent (--suggest,
- * --deep). Codex `exec` has no --no-session-persistence equivalent, so
- * sessions starting with this sentinel are asa's own and are excluded from
- * analysis — otherwise distill would eventually distill itself.
- */
-export const ASA_INTERNAL_SENTINEL = '[asa-internal]';
+export { ASA_INTERNAL_SENTINEL } from '@asa/core';
+import { ASA_INTERNAL_SENTINEL } from '@asa/core';
 
 export function isInternalSession(session: NormalizedSession): boolean {
   return session.steps[0]?.promptText?.startsWith(ASA_INTERNAL_SENTINEL) === true;
