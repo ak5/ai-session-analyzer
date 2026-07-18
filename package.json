@@ -2,14 +2,16 @@
   "name": "ai-session-analyzer",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.19.0",
+  "packageManager": "pnpm@10.34.5",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && pnpm --filter @ak5/asa bundle",
     "clean": "tsc -b --clean",
     "test": "vitest run",
+    "test:e2e": "pnpm build && vitest run -c vitest.e2e.config.ts",
+    "e2e:setup": "tsx scripts/e2e-setup.ts",
     "asa": "node packages/cli/bin/asa.js"
   },
   "devDependencies": {

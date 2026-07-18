@@ -4,11 +4,30 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../core" },
-    { "path": "../claude-sessions" },
-    { "path": "../codex-sessions" },
-    { "path": "../analyze" }
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../claude-sessions"
+    },
+    {
+      "path": "../codex-sessions"
+    },
+    {
+      "path": "../analyze"
+    },
+    {
+      "path": "../prompter"
+    },
+    {
+      "path": "../distill"
+    },
+    {
+      "path": "../meta"
+    }
   ]
 }

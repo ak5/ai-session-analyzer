@@ -2,28 +2,44 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import {
   addUsage,
+  emptyContentVolume,
+  emptyInteractionCounts,
   emptyUsage,
   parseJsonl,
   previewText,
+  readFirstJsonlObjects,
   type NormalizedSession,
   type Step,
+  type StepKind,
   type SubagentInfo,
   type ToolCall,
 } from '@asa/core';
 import {
+  classifyUserRecord,
+  commandParts,
   contentBlocks,
-  isPromptRecord,
   promptText,
   type ClaudeApiUsage,
   type ClaudeRecord,
 } from './records.js';
+import { annotateSessionWithGitTrace } from './trace.js';
 
 export async function readClaudeRecords(filePath: string): Promise<ClaudeRecord[]> {
   return parseJsonl<ClaudeRecord>(await readFile(filePath, 'utf8'));
 }
 
+/** The session's cwd from the file header, without loading the transcript. */
+export async function readClaudeSessionCwd(filePath: string): Promise<string | undefined> {
+  for (const record of (await readFirstJsonlObjects(filePath, 8)) as ClaudeRecord[]) {
+    if (typeof record.cwd === 'string') return record.cwd;
+  }
+  return undefined;
+}
+
 export async function loadClaudeSession(filePath: string): Promise<NormalizedSession> {
-  return normalizeClaudeRecords(await readClaudeRecords(filePath), filePath);
+  const session = normalizeClaudeRecords(await readClaudeRecords(filePath), filePath);
+  await annotateSessionWithGitTrace(session);
+  return session;
 }
 
 function usageDelta(usage: ClaudeApiUsage | undefined) {
@@ -61,18 +77,29 @@ export function normalizeClaudeRecords(
     steps: [],
     usage: emptyUsage(),
     subagents: [],
+    interactions: emptyInteractionCounts(),
+    contentVolume: emptyContentVolume(),
   };
+  const volume = session.contentVolume;
 
   const models = new Set<string>();
   const seenApiIds = new Set<string>();
   const toolCallsById = new Map<string, ToolCall>();
   let currentStep: Step | undefined;
 
-  const openStep = (record: ClaudeRecord, prompt?: string): Step => {
+  const openStep = (
+    record: ClaudeRecord,
+    prompt?: string,
+    kind: StepKind = 'prompt',
+    commandName?: string,
+  ): Step => {
     const step: Step = {
       id: record.uuid ?? `step-${session.steps.length}`,
       index: session.steps.length,
+      kind,
+      commandName,
       timestamp: record.timestamp,
+      promptText: prompt,
       promptPreview: prompt !== undefined ? previewText(prompt) : undefined,
       apiCalls: 0,
       toolCalls: [],
@@ -97,11 +124,41 @@ export function normalizeClaudeRecords(
       session.title = record.aiTitle;
     }
     if (record.isCompactSummary) session.compactions += 1;
+    if (record.type === 'permission-mode') session.interactions.permissionModeChanges += 1;
+    if (record.type === 'pr-link') session.interactions.prLinks += 1;
+    if (record.type === 'queue-operation' && record.operation === 'enqueue') {
+      session.interactions.queuedPrompts += 1;
+    }
 
-    if (isPromptRecord(record)) {
-      currentStep = openStep(record, promptText(record));
+    if (record.type === 'attachment') {
+      volume.harnessInjectedChars += JSON.stringify(record.attachment ?? record).length;
       continue;
     }
+
+    const userKind = classifyUserRecord(record);
+    if (userKind === 'prompt') {
+      const text = promptText(record);
+      // system-reminder blocks ride along inside user messages — split them out
+      const reminders = text.match(/<system-reminder>[\s\S]*?<\/system-reminder>/g) ?? [];
+      const reminderChars = reminders.reduce((n, r) => n + r.length, 0);
+      volume.harnessInjectedChars += reminderChars;
+      volume.humanPromptChars += text.length - reminderChars;
+      currentStep = openStep(record, text);
+      continue;
+    }
+    if (userKind === 'command') {
+      const { name, args } = commandParts(record);
+      session.interactions.commands += 1;
+      volume.humanPromptChars += (args ?? name).length;
+      currentStep = openStep(record, args, 'command', name);
+      continue;
+    }
+    if (userKind === 'interruption') {
+      session.interactions.interruptions += 1;
+      if (currentStep) currentStep.aborted = true;
+      continue;
+    }
+    if (userKind === 'command-output') continue;
 
     if (record.type === 'assistant' && record.message) {
       // Robustness: activity before any prompt (e.g. hand-crafted transcripts).
@@ -136,7 +193,16 @@ export function normalizeClaudeRecords(
     }
 
     if (record.type === 'user') {
+      if (record.isMeta) {
+        volume.harnessInjectedChars += promptText(record).length;
+      }
       for (const block of contentBlocks(record.message)) {
+        if (block.type === 'tool_result') {
+          volume.toolResultChars +=
+            typeof block.content === 'string'
+              ? block.content.length
+              : JSON.stringify(block.content ?? '').length;
+        }
         if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
           const call = toolCallsById.get(block.tool_use_id);
           if (call) {

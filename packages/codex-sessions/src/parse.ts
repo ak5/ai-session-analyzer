@@ -2,9 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import {
   addUsage,
+  emptyContentVolume,
+  emptyInteractionCounts,
   emptyUsage,
   parseJsonl,
   previewText,
+  readFirstJsonlObjects,
   type NormalizedSession,
   type Step,
   type ToolCall,
@@ -20,6 +23,16 @@ import {
 
 export async function readCodexLines(filePath: string): Promise<CodexLine[]> {
   return parseJsonl<CodexLine>(await readFile(filePath, 'utf8'));
+}
+
+/** The session's cwd from session_meta, without loading the transcript. */
+export async function readCodexSessionCwd(filePath: string): Promise<string | undefined> {
+  for (const line of (await readFirstJsonlObjects(filePath, 3)) as CodexLine[]) {
+    if (line.type === 'session_meta' && typeof line.payload?.cwd === 'string') {
+      return line.payload.cwd;
+    }
+  }
+  return undefined;
 }
 
 export async function loadCodexSession(filePath: string): Promise<NormalizedSession> {
@@ -59,7 +72,10 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
     steps: [],
     usage: emptyUsage(),
     subagents: [],
+    interactions: emptyInteractionCounts(),
+    contentVolume: emptyContentVolume(),
   };
+  const volume = session.contentVolume;
 
   const models = new Set<string>();
   const toolCallsById = new Map<string, ToolCall>();
@@ -72,16 +88,38 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
   let stepStart = emptyUsage();
 
   const closeStep = () => {
-    if (currentStep) currentStep.usage = diffUsage(cumulative, stepStart);
+    if (!currentStep) return;
+    currentStep.usage = diffUsage(cumulative, stepStart);
+    // no task_complete arrived for this turn: it was aborted/interrupted
+    if (currentStep.durationMs === undefined) {
+      currentStep.aborted = true;
+      session.interactions.interruptions += 1;
+    }
   };
   const openStep = (id: string, timestamp?: string): Step => {
     closeStep();
     stepStart = { ...cumulative };
+    // Codex skills are invoked as $-prefixed messages ("$session-closeout …") —
+    // command steps, not free-text prompts
+    let kind: Step['kind'] = 'prompt';
+    let commandName: string | undefined;
+    let text = lastUserText;
+    const command = text?.match(/^\$[\w:.-]+/);
+    if (command) {
+      kind = 'command';
+      commandName = command[0];
+      text = text!.slice(command[0].length).trim() || undefined;
+      session.interactions.commands += 1;
+    }
+    lastUserText = undefined; // consume: a turn without fresh input must not inherit it
     const step: Step = {
       id,
       index: session.steps.length,
+      kind,
+      commandName,
       timestamp,
-      promptPreview: lastUserText !== undefined ? previewText(lastUserText) : undefined,
+      promptText: text,
+      promptPreview: text !== undefined ? previewText(text) : undefined,
       apiCalls: 0,
       toolCalls: [],
       usage: emptyUsage(),
@@ -99,10 +137,19 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
 
     switch (line.type) {
       case 'session_meta': {
+        if (typeof payload.base_instructions === 'string') {
+          volume.harnessInjectedChars += payload.base_instructions.length;
+        }
         if (typeof payload.id === 'string') session.id = payload.id;
         if (typeof payload.cwd === 'string') session.cwd = payload.cwd;
         if (typeof payload.cli_version === 'string') session.cliVersion = payload.cli_version;
         if (typeof payload.forked_from_id === 'string') session.forkedFromId = payload.forked_from_id;
+        if (
+          payload.thread_source === 'subagent' ||
+          (typeof payload.source === 'object' && payload.source !== null && 'subagent' in payload.source)
+        ) {
+          session.isSubagent = true;
+        }
         const git = payload.git as { branch?: string } | undefined;
         if (git?.branch) session.gitBranch = git.branch;
         break;
@@ -122,7 +169,10 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
         switch (payload.type) {
           case 'user_message': {
             const text = payload.message ?? payload.text;
-            if (typeof text === 'string') lastUserText = text;
+            if (typeof text === 'string') {
+              lastUserText = text;
+              volume.humanPromptChars += text.length;
+            }
             break;
           }
           case 'task_started': {
@@ -147,6 +197,21 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
       }
       case 'response_item': {
         switch (payload.type) {
+          case 'message': {
+            // developer messages and tag-wrapped user items (<environment_context>,
+            // <user_instructions>) are harness-injected, not typed by the human
+            const role = payload.role;
+            const content = payload.content;
+            if (Array.isArray(content)) {
+              const text = content
+                .map((c) => (typeof (c as { text?: unknown }).text === 'string' ? (c as { text: string }).text : ''))
+                .join('');
+              if (role === 'developer' || (role === 'user' && /^\s*</.test(text))) {
+                volume.harnessInjectedChars += text.length;
+              }
+            }
+            break;
+          }
           case 'function_call':
           case 'custom_tool_call': {
             const callId = typeof payload.call_id === 'string' ? payload.call_id : undefined;
@@ -166,6 +231,7 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
           }
           case 'function_call_output':
           case 'custom_tool_call_output': {
+            if (typeof payload.output === 'string') volume.toolResultChars += payload.output.length;
             const callId = typeof payload.call_id === 'string' ? payload.call_id : undefined;
             const call = callId ? toolCallsById.get(callId) : undefined;
             if (call && typeof payload.output === 'string') {

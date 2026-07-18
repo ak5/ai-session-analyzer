@@ -1,5 +1,8 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { normalizeCodexLines } from '../src/parse.js';
+import { normalizeCodexLines, readCodexSessionCwd } from '../src/parse.js';
 import type { CodexLine } from '../src/records.js';
 
 const SESSION_ID = '019f6fe1-5809-73f1-a4e3-478b31e04834';
@@ -122,6 +125,65 @@ describe('normalizeCodexLines', () => {
     expect(session.steps[0]!.usage.totalTokens).toBe(120);
     expect(session.steps[1]!.usage.totalTokens).toBe(230);
     expect(session.steps[0]!.durationMs).toBe(4000);
+  });
+
+  it('marks turns without task_complete as aborted and counts the interruption', () => {
+    // fixture turn 2 has no task_complete → aborted; turn 1 completed
+    expect(session.steps[0]!.aborted).toBeUndefined();
+    expect(session.steps[1]!.aborted).toBe(true);
+    expect(session.interactions.interruptions).toBe(1);
+  });
+
+  it('stores full prompt text on steps', () => {
+    expect(session.steps[1]!.promptText).toBe('now the other thing');
+  });
+
+  it('reads cwd from session_meta without loading the transcript', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-codex-test-'));
+    const filePath = join(dir, `rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureLines().map((l) => JSON.stringify(l)).join('\n'));
+    expect(await readCodexSessionCwd(filePath)).toBe('/tmp/proj');
+  });
+
+  it('treats $-prefixed messages as command steps, not prompts', () => {
+    const lines = fixtureLines();
+    lines.push(
+      { timestamp: '2026-07-17T10:02:00Z', type: 'event_msg',
+        payload: { type: 'user_message', message: '$session-closeout wrap it up' } },
+      { timestamp: '2026-07-17T10:02:01Z', type: 'event_msg',
+        payload: { type: 'task_started', turn_id: 'turn-cmd' } },
+    );
+    const s = normalizeCodexLines(lines, `/x/rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    const commandStep = s.steps.at(-1)!;
+    expect(commandStep.kind).toBe('command');
+    expect(commandStep.commandName).toBe('$session-closeout');
+    expect(commandStep.promptText).toBe('wrap it up');
+    expect(s.interactions.commands).toBe(1);
+  });
+
+  it('does not leak a consumed user message into the next turn', () => {
+    const lines = fixtureLines();
+    lines.push({ timestamp: '2026-07-17T10:02:00Z', type: 'event_msg',
+      payload: { type: 'task_started', turn_id: 'turn-3' } });
+    const s = normalizeCodexLines(lines, `/x/rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    expect(s.steps.at(-1)!.promptText).toBeUndefined();
+  });
+
+  it('marks subagent rollouts', () => {
+    const lines = fixtureLines();
+    lines[0]!.payload!.thread_source = 'subagent';
+    const sub = normalizeCodexLines(lines, `/x/rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    expect(sub.isSubagent).toBe(true);
+    expect(session.isSubagent).toBeUndefined();
+  });
+
+  it('tracks fork lineage and compactions', () => {
+    const lines = fixtureLines();
+    lines[0]!.payload!.forked_from_id = '019f0000-dead-7000-8000-000000000099';
+    lines.push({ timestamp: '2026-07-17T10:02:00Z', type: 'compacted', payload: { window_number: 1 } });
+    const forked = normalizeCodexLines(lines, `/x/rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    expect(forked.forkedFromId).toBe('019f0000-dead-7000-8000-000000000099');
+    expect(forked.compactions).toBe(1);
   });
 
   it('links tool calls and classifies MCP tools', () => {

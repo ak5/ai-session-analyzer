@@ -1,18 +1,52 @@
 {
-  "name": "asa",
-  "version": "1.0.0-rc.1",
-  "private": true,
+  "name": "@ak5/asa",
+  "version": "1.0.0-rc.2",
+  "description": "ai session analyzer — analyze, resume, fork and distill Claude Code & Codex CLI sessions",
   "type": "module",
-  "description": "AI session analyzer — analyze, resume and fork Claude Code & Codex CLI sessions",
   "bin": {
     "asa": "./bin/asa.js"
   },
-  "files": ["bin", "dist"],
-  "dependencies": {
+  "files": [
+    "bin",
+    "dist/bundle.mjs"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "author": "Alexander Ververis <alexander.ververis@gmail.com> (https://github.com/ak5)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ak5/ai-session-analyzer.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/ak5/ai-session-analyzer#readme",
+  "bugs": "https://github.com/ak5/ai-session-analyzer/issues",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "ai-agents",
+    "sessions",
+    "transcripts",
+    "token-usage",
+    "cli"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "bundle": "esbuild src/index.ts --bundle --platform=node --format=esm --target=node20 --outfile=dist/bundle.mjs --log-level=warning --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\"",
+    "prepublishOnly": "pnpm --workspace-root build && pnpm --workspace-root test"
+  },
+  "devDependencies": {
     "@asa/analyze": "workspace:*",
     "@asa/claude-sessions": "workspace:*",
     "@asa/codex-sessions": "workspace:*",
     "@asa/core": "workspace:*",
-    "commander": "^13.0.0"
+    "@asa/distill": "workspace:*",
+    "@asa/meta": "workspace:*",
+    "@asa/prompter": "workspace:*",
+    "commander": "^13.0.0",
+    "esbuild": "^0.28.0"
   }
 }

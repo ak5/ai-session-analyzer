@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyUsage, type NormalizedSession } from '@asa/core';
+import { emptyContentVolume, emptyInteractionCounts, emptyUsage, type NormalizedSession } from '@asa/core';
 import { analyzeSession } from '../src/analyze.js';
 import { renderReport } from '../src/render.js';
 
@@ -15,10 +15,13 @@ function fixtureSession(): NormalizedSession {
     endedAt: '2026-07-17T10:10:00Z',
     usage: { ...emptyUsage(), inputTokens: 120, outputTokens: 60, totalTokens: 180 },
     subagents: [{ id: 'agent1', agentType: 'Explore', totalTokens: 5000 }],
+    interactions: { ...emptyInteractionCounts(), interruptions: 1 },
+    contentVolume: { humanPromptChars: 100, harnessInjectedChars: 300, toolResultChars: 600 },
     steps: [
       {
         id: 'u1',
         index: 0,
+        kind: 'prompt',
         apiCalls: 2,
         promptPreview: 'first prompt',
         usage: emptyUsage(),
