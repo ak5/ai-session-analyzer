@@ -97,8 +97,11 @@ asa fork -c <id> --at <stepId>  # fork AT a step (Claude; see the demo above)
 the transcript up to that step under a fresh session id, then resumes it. Retry a
 decision point, A/B an approach, or re-enter an expensive session without replaying
 your whole day. Caveat, stated plainly: it relies on Claude Code accepting externally
-written transcripts on `--resume` — works today (verified against v2.1.212), but not a
-stable contract; treat step-forks as disposable.
+written transcripts on `--resume` — works today (verified against v2.1.212, including
+deep forks correctly recalling earlier-step content), but not a stable contract; treat
+step-forks as disposable. Resume a fork with a model whose context window fits it: a
+fork of a heavy session can exceed a smaller model's window (`--model haiku` on a
+200k+ context replies "Prompt is too long").
 
 ## Learn
 
