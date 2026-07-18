@@ -168,19 +168,35 @@ export function renderTable(headers: string[], rows: string[][]): string {
 /**
  * Read just the first few records of a JSONL file without loading it all —
  * session headers (cwd, meta) live in the first lines and files reach 100s of MB.
+ * Reads in growing chunks until maxRecords complete lines are seen: a single
+ * header line can exceed 100KB (Codex session_meta embeds base_instructions).
  */
 export async function readFirstJsonlObjects(
   filePath: string,
   maxRecords = 5,
-  maxBytes = 16_384,
+  maxBytes = 4 * 1024 * 1024,
 ): Promise<unknown[]> {
   const { open } = await import('node:fs/promises');
   const handle = await open(filePath, 'r');
   try {
-    const buffer = Buffer.alloc(maxBytes);
-    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
-    const lines = buffer.subarray(0, bytesRead).toString('utf8').split('\n');
-    // the last chunk may be a truncated line — parseJsonl drops it silently
+    const chunkSize = 64 * 1024;
+    const chunks: Buffer[] = [];
+    let position = 0;
+    let newlines = 0;
+    while (position < maxBytes && newlines <= maxRecords) {
+      const buffer = Buffer.alloc(chunkSize);
+      const { bytesRead } = await handle.read(buffer, 0, chunkSize, position);
+      if (bytesRead === 0) {
+        // EOF: everything read is complete lines (last may lack trailing \n)
+        return parseJsonl(Buffer.concat(chunks).toString('utf8')).slice(0, maxRecords);
+      }
+      const chunk = buffer.subarray(0, bytesRead);
+      chunks.push(chunk);
+      position += bytesRead;
+      for (const byte of chunk) if (byte === 0x0a) newlines += 1;
+    }
+    const lines = Buffer.concat(chunks).toString('utf8').split('\n');
+    // the final chunk may end mid-line — drop the possibly-truncated tail
     return parseJsonl(lines.slice(0, -1).join('\n')).slice(0, maxRecords);
   } finally {
     await handle.close();

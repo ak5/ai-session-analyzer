@@ -34,6 +34,34 @@ describe('usage helpers', () => {
   });
 });
 
+describe('readFirstJsonlObjects', () => {
+  it('handles header lines larger than one read chunk', async () => {
+    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'asa-core-'));
+    const filePath = join(dir, 'big-header.jsonl');
+    // first line ~200KB — bigger than the 64KB chunk size
+    const big = { type: 'session_meta', payload: { cwd: '/tmp/proj', blob: 'x'.repeat(200_000) } };
+    await writeFile(filePath, `${JSON.stringify(big)}\n${JSON.stringify({ type: 'other' })}\n`);
+    const { readFirstJsonlObjects } = await import('../src/index.js');
+    const records = (await readFirstJsonlObjects(filePath, 2)) as Array<{ type: string }>;
+    expect(records).toHaveLength(2);
+    expect(records[0]!.type).toBe('session_meta');
+  });
+
+  it('reads files without trailing newline to EOF', async () => {
+    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'asa-core-'));
+    const filePath = join(dir, 'no-trailing.jsonl');
+    await writeFile(filePath, '{"a":1}\n{"b":2}');
+    const { readFirstJsonlObjects } = await import('../src/index.js');
+    expect(await readFirstJsonlObjects(filePath, 5)).toEqual([{ a: 1 }, { b: 2 }]);
+  });
+});
+
 describe('shortId', () => {
   it('keeps the first 8 chars', () => {
     expect(shortId('019f6fe1-5809-73f1-a4e3-478b31e04834')).toBe('019f6fe1');
