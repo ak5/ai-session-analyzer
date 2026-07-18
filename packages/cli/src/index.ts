@@ -16,6 +16,7 @@ import {
   agentsForFilter,
   type AgentAdapter,
 } from './agents.js';
+import { enrichRefs, groupByProject, type ListedRef } from './list.js';
 import { spawnAgentCli } from './spawn.js';
 
 type SelectorOpts = Record<string, string | undefined>;
@@ -133,31 +134,58 @@ program
   .version('1.0.0-rc.1')
   .addHelpText('after', USE_CASES);
 
+function listRow(ref: ListedRef | SessionRef, indent = ''): string {
+  const when = ref.updatedAt?.toISOString().replace('T', ' ').slice(0, 16) ?? '?';
+  const size = ref.sizeBytes !== undefined ? `${Math.round(ref.sizeBytes / 1024)}kB` : '';
+  const label = ref.title ?? '';
+  return `${indent}${when}  ${ref.agent.padEnd(6)} ${ref.id}  ${size.padStart(8)}  ${previewText(label, 44)}`;
+}
+
 program
   .command('list')
-  .description('List recent sessions from all agents')
+  .description('List recent sessions from all agents, grouped by project folder')
   .option('--agent <agent>', AGENT_FILTER_VALUES, 'all')
   .option('-n, --limit <n>', 'max sessions per agent', '15')
-  .option('--json', 'output JSON')
-  .action(async (opts: { agent: string; limit: string; json?: boolean }) => {
+  .option('--flat', 'one line per session, newest first, no grouping')
+  .option('--json', 'output JSON (flat, with cwdResolved/orphaned per session)')
+  .action(async (opts: { agent: string; limit: string; flat?: boolean; json?: boolean }) => {
     const limit = Number(opts.limit);
     const listed = await Promise.all(agentsForFilter(opts.agent).map((a) => a.list()));
     const rows = listed
       .flatMap((refs) => refs.slice(0, limit))
       .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
-    if (opts.json) {
-      console.log(JSON.stringify(rows, null, 2));
+    if (!rows.length) {
+      console.log('No sessions found.');
       return;
     }
-    for (const ref of rows) {
-      const when = ref.updatedAt?.toISOString().replace('T', ' ').slice(0, 16) ?? '?';
-      const size = ref.sizeBytes !== undefined ? `${Math.round(ref.sizeBytes / 1024)}kB` : '';
-      const label = ref.title ?? ref.cwd ?? '';
-      console.log(
-        `${when}  ${ref.agent.padEnd(6)} ${ref.id}  ${size.padStart(8)}  ${previewText(label, 48)}`,
-      );
+    if (opts.flat && !opts.json) {
+      for (const ref of rows) console.log(listRow(ref));
+      return;
     }
-    if (!rows.length) console.log('No sessions found.');
+
+    const adapterByKind = new Map(AGENTS.map((a) => [a.kind as string, a]));
+    const enriched = await enrichRefs(rows, adapterByKind);
+    if (opts.json) {
+      console.log(JSON.stringify(enriched, null, 2));
+      return;
+    }
+
+    const groups = groupByProject(enriched);
+    const live = groups.filter((g) => !g.orphaned);
+    const orphans = groups.filter((g) => g.orphaned);
+    for (const group of live) {
+      console.log(`${group.cwd} — ${group.refs.length} session${group.refs.length > 1 ? 's' : ''}`);
+      for (const ref of group.refs) console.log(listRow(ref, '  '));
+      console.log('');
+    }
+    if (orphans.length) {
+      console.log('Orphans (cwd deleted or unknown):');
+      for (const group of orphans) {
+        console.log(`${group.cwd ?? '(unknown cwd)'} — ${group.refs.length} session${group.refs.length > 1 ? 's' : ''}`);
+        for (const ref of group.refs) console.log(listRow(ref, '  '));
+        console.log('');
+      }
+    }
   });
 
 addSelectorOptions(

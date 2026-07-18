@@ -105,11 +105,29 @@ describe('asa (no fixtures needed)', () => {
 });
 
 describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
-  it('lists the fixture session', async () => {
+  it('lists the fixture session with resolved cwd in JSON', async () => {
     const res = await asa('list', '--agent', 'claude', '--json');
     expect(res.code).toBe(0);
-    const rows = JSON.parse(res.stdout) as Array<{ id: string; agent: string }>;
-    expect(rows.some((r) => r.id === claudeId && r.agent === 'claude')).toBe(true);
+    const rows = JSON.parse(res.stdout) as Array<{
+      id: string;
+      agent: string;
+      cwdResolved?: string;
+      orphaned: boolean;
+    }>;
+    const row = rows.find((r) => r.id === claudeId && r.agent === 'claude');
+    expect(row).toBeTruthy();
+    expect(row!.cwdResolved).toBe(repoRoot);
+    expect(row!.orphaned).toBe(false);
+  });
+
+  it('groups list output by project folder, flat with --flat', async () => {
+    const grouped = await asa('list');
+    expect(grouped.code).toBe(0);
+    expect(grouped.stdout).toContain(`${repoRoot} — `);
+    expect(grouped.stdout).toContain(claudeId!);
+    const flat = await asa('list', '--flat');
+    expect(flat.stdout).not.toContain(' — ');
+    expect(flat.stdout).toContain(claudeId!);
   });
 
   it('analyzes the fixture session', async () => {

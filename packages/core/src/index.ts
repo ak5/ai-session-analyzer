@@ -165,6 +165,28 @@ export function renderTable(headers: string[], rows: string[][]): string {
   return [line(headers), line(widths.map((w) => '-'.repeat(w))), ...rows.map(line)].join('\n');
 }
 
+/**
+ * Read just the first few records of a JSONL file without loading it all —
+ * session headers (cwd, meta) live in the first lines and files reach 100s of MB.
+ */
+export async function readFirstJsonlObjects(
+  filePath: string,
+  maxRecords = 5,
+  maxBytes = 16_384,
+): Promise<unknown[]> {
+  const { open } = await import('node:fs/promises');
+  const handle = await open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(maxBytes);
+    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
+    const lines = buffer.subarray(0, bytesRead).toString('utf8').split('\n');
+    // the last chunk may be a truncated line — parseJsonl drops it silently
+    return parseJsonl(lines.slice(0, -1).join('\n')).slice(0, maxRecords);
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Parse a JSONL buffer tolerantly: unparseable lines are skipped. */
 export function parseJsonl<T = unknown>(text: string): T[] {
   const out: T[] = [];

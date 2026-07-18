@@ -1,5 +1,8 @@
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { normalizeCodexLines } from '../src/parse.js';
+import { normalizeCodexLines, readCodexSessionCwd } from '../src/parse.js';
 import type { CodexLine } from '../src/records.js';
 
 const SESSION_ID = '019f6fe1-5809-73f1-a4e3-478b31e04834';
@@ -133,6 +136,13 @@ describe('normalizeCodexLines', () => {
 
   it('stores full prompt text on steps', () => {
     expect(session.steps[1]!.promptText).toBe('now the other thing');
+  });
+
+  it('reads cwd from session_meta without loading the transcript', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-codex-test-'));
+    const filePath = join(dir, `rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureLines().map((l) => JSON.stringify(l)).join('\n'));
+    expect(await readCodexSessionCwd(filePath)).toBe('/tmp/proj');
   });
 
   it('marks subagent rollouts', () => {

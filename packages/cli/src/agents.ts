@@ -13,9 +13,15 @@ import {
   forkClaudeSessionAtStep,
   listClaudeSessions,
   loadClaudeSession,
+  readClaudeSessionCwd,
   type ForkAtStepResult,
 } from '@asa/claude-sessions';
-import { findCodexSession, listCodexSessions, loadCodexSession } from '@asa/codex-sessions';
+import {
+  findCodexSession,
+  listCodexSessions,
+  loadCodexSession,
+  readCodexSessionCwd,
+} from '@asa/codex-sessions';
 
 export interface CliInvocation {
   command: string;
@@ -31,6 +37,8 @@ export interface AgentAdapter {
   list(): Promise<SessionRef[]>;
   find(idOrPrefix: string): Promise<SessionRef | undefined>;
   load(filePath: string): Promise<NormalizedSession>;
+  /** Real cwd from the session file header (cheap — reads a few lines). */
+  cwd(ref: SessionRef): Promise<string | undefined>;
   resume(id: string, prompt?: string): CliInvocation;
   fork(id: string, prompt?: string): CliInvocation;
   /** Present when the agent supports forking at a step (transcript truncation). */
@@ -44,6 +52,7 @@ const claudeAgent: AgentAdapter = {
   list: () => listClaudeSessions(),
   find: (id) => findClaudeSession(id),
   load: (filePath) => loadClaudeSession(filePath),
+  cwd: (ref) => readClaudeSessionCwd(ref.filePath),
   resume: (id, prompt) => ({
     command: 'claude',
     args: prompt ? ['-p', '--resume', id, prompt] : ['--resume', id],
@@ -65,6 +74,7 @@ const codexAgent: AgentAdapter = {
   list: () => listCodexSessions(),
   find: (id) => findCodexSession(id),
   load: (filePath) => loadCodexSession(filePath),
+  cwd: (ref) => readCodexSessionCwd(ref.filePath),
   resume: (id, prompt) => ({
     command: 'codex',
     args: prompt ? ['exec', 'resume', id, prompt] : ['resume', id],

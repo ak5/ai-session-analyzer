@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseJsonl } from '@asa/core';
 import { forkClaudeSessionAtStep } from '../src/fork.js';
-import { normalizeClaudeRecords } from '../src/parse.js';
+import { normalizeClaudeRecords, readClaudeSessionCwd } from '../src/parse.js';
 import type { ClaudeRecord } from '../src/records.js';
 
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -258,6 +258,15 @@ describe('normalizeClaudeRecords — compaction and subagents', () => {
     const records = fixtureRecords();
     records.push({ type: 'ai-title', aiTitle: 'My session', sessionId: SESSION_ID });
     expect(normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`).title).toBe('My session');
+  });
+});
+
+describe('readClaudeSessionCwd', () => {
+  it('reads cwd from the header without needing the whole file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    expect(await readClaudeSessionCwd(filePath)).toBe('/tmp/proj');
   });
 });
 

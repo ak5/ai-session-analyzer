@@ -6,6 +6,7 @@ import {
   emptyUsage,
   parseJsonl,
   previewText,
+  readFirstJsonlObjects,
   type NormalizedSession,
   type Step,
   type StepKind,
@@ -23,6 +24,14 @@ import {
 
 export async function readClaudeRecords(filePath: string): Promise<ClaudeRecord[]> {
   return parseJsonl<ClaudeRecord>(await readFile(filePath, 'utf8'));
+}
+
+/** The session's cwd from the file header, without loading the transcript. */
+export async function readClaudeSessionCwd(filePath: string): Promise<string | undefined> {
+  for (const record of (await readFirstJsonlObjects(filePath, 8)) as ClaudeRecord[]) {
+    if (typeof record.cwd === 'string') return record.cwd;
+  }
+  return undefined;
 }
 
 export async function loadClaudeSession(filePath: string): Promise<NormalizedSession> {

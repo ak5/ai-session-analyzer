@@ -6,6 +6,7 @@ import {
   emptyUsage,
   parseJsonl,
   previewText,
+  readFirstJsonlObjects,
   type NormalizedSession,
   type Step,
   type ToolCall,
@@ -21,6 +22,16 @@ import {
 
 export async function readCodexLines(filePath: string): Promise<CodexLine[]> {
   return parseJsonl<CodexLine>(await readFile(filePath, 'utf8'));
+}
+
+/** The session's cwd from session_meta, without loading the transcript. */
+export async function readCodexSessionCwd(filePath: string): Promise<string | undefined> {
+  for (const line of (await readFirstJsonlObjects(filePath, 3)) as CodexLine[]) {
+    if (line.type === 'session_meta' && typeof line.payload?.cwd === 'string') {
+      return line.payload.cwd;
+    }
+  }
+  return undefined;
 }
 
 export async function loadCodexSession(filePath: string): Promise<NormalizedSession> {
