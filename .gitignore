@@ -7,3 +7,4 @@ dist/
 # copied auth state; must never be committed
 .e2e/
 .asa/
+.claude/.jj-undo-stack*
