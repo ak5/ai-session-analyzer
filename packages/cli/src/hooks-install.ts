@@ -131,16 +131,19 @@ export function installGitTraceHooks(fromPath: string, options: { jj?: boolean }
   }
 
   if (options.jj) {
-    if (existsSync(join(repoPath, '.jj'))) {
-      actions.push('jj already colocated');
-    } else if (spawnSync('jj', ['--version'], { stdio: 'ignore' }).status === 0) {
-      execFileSync('jj', ['git', 'init', '--colocate'], { cwd: repoPath, stdio: 'ignore' });
-      actions.push('colocated jj repo (jj git init --colocate)');
-    } else {
-      actions.push('jj not on PATH — skipped colocation (brew install jj)');
-    }
+    actions.push(colocateJj(repoPath));
   }
 
   if (!actions.length) actions.push('already installed — nothing to do');
   return { actions };
+}
+
+/** Colocate a jj repo (idempotent). Standalone so setup can offer it as its own opt-in step. */
+export function colocateJj(repoPath: string): string {
+  if (existsSync(join(repoPath, '.jj'))) return 'jj already colocated';
+  if (spawnSync('jj', ['--version'], { stdio: 'ignore' }).status !== 0) {
+    return 'jj not on PATH — skipped colocation (brew install jj)';
+  }
+  execFileSync('jj', ['git', 'init', '--colocate'], { cwd: repoPath, stdio: 'ignore' });
+  return 'colocated jj repo (jj git init --colocate)';
 }

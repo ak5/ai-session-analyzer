@@ -72,10 +72,11 @@ Node ≥ 20, pnpm. The global install is a link to your checkout — `git pull &
 pnpm build` updates it in place. Works on the session files alone; the `claude` /
 `codex` CLIs are only needed for `resume`, `fork`, and the opt-in model passes.
 
-Then run **`asa setup`**: an environment report, then two optional confirmed
-steps — raise Claude's transcript retention globally (`cleanupPeriodDays`,
-default 30 days — the ceiling on every longitudinal feature), and install
-per-prompt git tracing (+ jj colocation) into the current repo.
+Then run **`asa setup`**: an environment report, then three independently
+confirmed opt-in steps — raise Claude's transcript retention globally
+(`cleanupPeriodDays`, default 30 days — the ceiling on every longitudinal
+feature), install per-prompt git tracing into the current repo, and colocate
+jj for op-log snapshots of agent edits.
 
 ## Inspect
 

@@ -45,7 +45,9 @@ import {
   renderModelReport,
   steeringSamples,
 } from '@asa/meta';
-import { installGitTraceHooks, resolveRepoRoot } from './hooks-install.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { colocateJj, installGitTraceHooks, resolveRepoRoot } from './hooks-install.js';
 import { enrichRefs, groupByProject, type ListedRef } from './list.js';
 import { spawnAgentCli } from './spawn.js';
 
@@ -567,7 +569,7 @@ Examples:
 program
   .command('setup')
   .description(
-    'Onboarding: environment report, then optional confirmed steps — raise Claude transcript retention (globally), and install per-prompt git tracing (+ jj colocation) into the current repo',
+    'Onboarding: environment report, then independently-confirmed optional steps — raise Claude transcript retention (global), install per-prompt git tracing (repo), colocate jj for op-log snapshots (repo)',
   )
   .option('--retention-days <n>', 'retention to offer', String(DEFAULT_RETENTION_DAYS))
   .option('--no-jj', 'skip offering jj colocation with the repo hooks')
@@ -602,12 +604,26 @@ program
     }
     if (repoRoot) {
       console.log(
-        `\nOptional: install per-prompt git tracing into ${repoRoot}` +
-          `${opts.jj ? ' (+ jj colocation for op-log snapshots of AI edits)' : ''} — asa analyze then shows the commit each prompt ran against.`,
+        `\nOptional: install per-prompt git tracing into ${repoRoot} — asa analyze then shows the commit each prompt ran against.`,
       );
       if (await askYesNo('  install? [y/N] ', opts.yes, 'hooks not installed')) {
-        const { actions } = installGitTraceHooks(repoRoot, { jj: opts.jj });
+        const { actions } = installGitTraceHooks(repoRoot, { jj: false });
         for (const action of actions) console.log(`  · ${action}`);
+      } else {
+        console.log('Skipped.');
+      }
+    }
+
+    // step 3 (per-repo, its own opt-in): jj colocation
+    if (repoRoot && opts.jj && !existsSync(join(repoRoot, '.jj'))) {
+      console.log(
+        `\nOptional: colocate a jj repo in ${repoRoot} (jj git init --colocate). The trace hook then` +
+          `\nsnapshots the working copy into jj's op log every turn — commit-free, diffable history of` +
+          `\nwhat the agent changed between prompts (jj op log / jj op diff), and a base for undo/replay` +
+          `\ntooling. Fully reversible: delete .jj/ to leave.`,
+      );
+      if (await askYesNo('  colocate? [y/N] ', opts.yes, 'jj not colocated')) {
+        console.log(`  · ${colocateJj(repoRoot)}`);
       } else {
         console.log('Skipped.');
       }
