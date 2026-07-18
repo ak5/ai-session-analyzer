@@ -270,6 +270,36 @@ describe.skipIf(!claudeId && !codexId)(`distill e2e (${setupHint})`, () => {
   });
 });
 
+describe.skipIf(!claudeId && !codexId)(`meta e2e (${setupHint})`, () => {
+  it('builds a project dossier for this repo from the fixture sessions', async () => {
+    const res = await asa('project', repoRoot);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain(`Project dossier — ${repoRoot}`);
+    expect(res.stdout).toContain('Instruction surfaces');
+    expect(res.stdout).toContain('content volume');
+  });
+
+  it('reports intents with per-repo dominance', async () => {
+    const res = await asa('intents', '--json');
+    expect(res.code).toBe(0);
+    const report = JSON.parse(res.stdout);
+    expect(report.sessions.length).toBeGreaterThanOrEqual(1);
+    expect(Object.keys(report.byIntent).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('runs efficacy (this repo has no committed instruction files → empty state)', async () => {
+    const res = await asa('efficacy', repoRoot);
+    expect(res.code).toBe(0);
+    expect(res.stdout.length).toBeGreaterThan(0);
+  });
+
+  it('rejects unknown --deep backends for intents', async () => {
+    const res = await asa('intents', '--deep', 'gemini');
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('--deep must be claude or codex');
+  });
+});
+
 describe.skipIf(!codexId)(`codex e2e ${codexId ?? `(${setupHint})`}`, () => {
   it('lists the fixture session', async () => {
     const res = await asa('list', '--agent', 'codex', '--json');

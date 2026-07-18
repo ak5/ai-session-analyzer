@@ -14,6 +14,7 @@ export default defineConfig({
       '@asa/analyze': pkg('analyze'),
       '@asa/prompter': pkg('prompter'),
       '@asa/distill': pkg('distill'),
+      '@asa/meta': pkg('meta'),
     },
   },
   test: {

@@ -44,6 +44,7 @@
     "@asa/codex-sessions": "workspace:*",
     "@asa/core": "workspace:*",
     "@asa/distill": "workspace:*",
+    "@asa/meta": "workspace:*",
     "@asa/prompter": "workspace:*",
     "commander": "^13.0.0",
     "esbuild": "^0.28.0"

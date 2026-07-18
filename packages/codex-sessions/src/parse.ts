@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import {
   addUsage,
+  emptyContentVolume,
   emptyInteractionCounts,
   emptyUsage,
   parseJsonl,
@@ -72,7 +73,9 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
     usage: emptyUsage(),
     subagents: [],
     interactions: emptyInteractionCounts(),
+    contentVolume: emptyContentVolume(),
   };
+  const volume = session.contentVolume;
 
   const models = new Set<string>();
   const toolCallsById = new Map<string, ToolCall>();
@@ -120,6 +123,9 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
 
     switch (line.type) {
       case 'session_meta': {
+        if (typeof payload.base_instructions === 'string') {
+          volume.harnessInjectedChars += payload.base_instructions.length;
+        }
         if (typeof payload.id === 'string') session.id = payload.id;
         if (typeof payload.cwd === 'string') session.cwd = payload.cwd;
         if (typeof payload.cli_version === 'string') session.cliVersion = payload.cli_version;
@@ -149,7 +155,10 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
         switch (payload.type) {
           case 'user_message': {
             const text = payload.message ?? payload.text;
-            if (typeof text === 'string') lastUserText = text;
+            if (typeof text === 'string') {
+              lastUserText = text;
+              volume.humanPromptChars += text.length;
+            }
             break;
           }
           case 'task_started': {
@@ -174,6 +183,21 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
       }
       case 'response_item': {
         switch (payload.type) {
+          case 'message': {
+            // developer messages and tag-wrapped user items (<environment_context>,
+            // <user_instructions>) are harness-injected, not typed by the human
+            const role = payload.role;
+            const content = payload.content;
+            if (Array.isArray(content)) {
+              const text = content
+                .map((c) => (typeof (c as { text?: unknown }).text === 'string' ? (c as { text: string }).text : ''))
+                .join('');
+              if (role === 'developer' || (role === 'user' && /^\s*</.test(text))) {
+                volume.harnessInjectedChars += text.length;
+              }
+            }
+            break;
+          }
           case 'function_call':
           case 'custom_tool_call': {
             const callId = typeof payload.call_id === 'string' ? payload.call_id : undefined;
@@ -193,6 +217,7 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
           }
           case 'function_call_output':
           case 'custom_tool_call_output': {
+            if (typeof payload.output === 'string') volume.toolResultChars += payload.output.length;
             const callId = typeof payload.call_id === 'string' ? payload.call_id : undefined;
             const call = callId ? toolCallsById.get(callId) : undefined;
             if (call && typeof payload.output === 'string') {

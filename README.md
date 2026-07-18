@@ -28,6 +28,10 @@ asa distill --suggest claude|codex        # + model recommendations from those s
 
 asa compare -c <a> -c <b>                 # metric deltas: original vs fork/replay, or -c vs -o
 asa install-hooks [repo] [--jj]           # per-prompt git tracing (+ jj op-log snapshots)
+
+asa project [path]                        # repo dossier: sessions, spend, steering, instruction surfaces
+asa efficacy [path]                       # steering metrics before/after each CLAUDE.md/AGENTS.md commit
+asa intents [--deep claude|codex]         # session intent mix per repo; themes flagged shipped/unshipped
 ```
 
 Session selectors: `-c/--claude <id>` and `-o/--codex <id>` (`-o` as in OpenAI).
@@ -64,6 +68,7 @@ Classic pnpm monorepo:
 | `@asa/analyze` | analysis + text rendering over the normalized model |
 | `@asa/prompter` | human-side analysis: prompt features, archetypes, lint, skill curve, LLM judge |
 | `@asa/distill` | recurrence mining: prompt clusters, tool-sequence n-grams, `--suggest` recommendations |
+| `@asa/meta` | repo-level meta-analysis: project dossier, instruction-efficacy, intent classification |
 | `asa` (`packages/cli`) | commander CLI; spawns `claude`/`codex` for resume/fork |
 
 Both parsers are hand-rolled and deliberately tolerant (no published schema exists
@@ -138,6 +143,26 @@ in two layers:
   pass `--prompt-file`. Suggest prompts are stamped `[asa-internal]` and such
   sessions are excluded from all analysis, since `codex exec` always persists a
   rollout and distill must not distill itself.
+
+## Repo-level meta-analysis
+
+- **`asa project [path]`** — one repo's whole agent history: session counts per
+  agent, aggregate spend and steering totals, top tools/MCP servers, and an
+  inventory of the instruction surfaces (CLAUDE.md, AGENTS.md, settings, skills,
+  dev-faq, asa hooks) with git churn per file. Includes the **content-volume
+  split**: how many chars of session input were typed by the human vs injected by
+  the harness (CLAUDE.md/system reminders/attachments/base instructions) vs tool
+  results — a cost proxy for instruction overhead (token usage can't be attributed
+  by source; characters can).
+- **`asa efficacy [path]`** — for every commit touching CLAUDE.md/AGENTS.md:
+  correction and interruption rates in the sessions before vs after it.
+  Correlational by construction (model versions and task mix drift too) and the
+  report says so; the interesting signal is a rule that changed nothing.
+- **`asa intents`** — keyword-classified session intents (feature / bugfix /
+  refactor / research / ops / learning) with per-repo dominance; `--deep
+  claude|codex` batches opening prompts through a model to name recurring
+  cross-session *themes* and flags each shipped/unshipped via recorded PR links —
+  "asked four times, never shipped" is an issue waiting to be filed.
 
 ## Git context per step
 

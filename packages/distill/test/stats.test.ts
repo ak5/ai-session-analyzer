@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  emptyContentVolume,
   emptyInteractionCounts,
   emptyUsage,
   type NormalizedSession,
@@ -38,6 +39,7 @@ function session(id: string, steps: Step[]): NormalizedSession {
     usage: emptyUsage(),
     subagents: [],
     interactions: emptyInteractionCounts(),
+    contentVolume: emptyContentVolume(),
   };
 }
 

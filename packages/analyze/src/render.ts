@@ -44,6 +44,16 @@ export function renderReport(report: AnalysisReport): string {
     out.push(`human: ${parts.join(' · ')}`);
   }
   out.push(`tokens: ${fmtUsage(session.usage)} — total ${fmt(session.usage.totalTokens)}`);
+  const v = session.contentVolume;
+  const volumeTotal = v.humanPromptChars + v.harnessInjectedChars + v.toolResultChars;
+  if (volumeTotal > 0) {
+    const pct = (n: number) => `${((n / volumeTotal) * 100).toFixed(0)}%`;
+    out.push(
+      `content: human ${fmt(v.humanPromptChars)} chars (${pct(v.humanPromptChars)})` +
+        ` · harness ${fmt(v.harnessInjectedChars)} (${pct(v.harnessInjectedChars)})` +
+        ` · tool results ${fmt(v.toolResultChars)} (${pct(v.toolResultChars)})`,
+    );
+  }
 
   if (report.toolStats.length) {
     out.push('', 'Tools:');

@@ -23,7 +23,18 @@ import {
   agentsForFilter,
   type AgentAdapter,
 } from './agents.js';
-import { installGitTraceHooks } from './hooks-install.js';
+import {
+  buildIntentReport,
+  buildProjectDossier,
+  computeEfficacy,
+  deepenIntentReport,
+  readInstructionChanges,
+  renderDossier,
+  renderEfficacy,
+  renderIntents,
+  steeringSamples,
+} from '@asa/meta';
+import { installGitTraceHooks, resolveRepoRoot } from './hooks-install.js';
 import { enrichRefs, groupByProject, type ListedRef } from './list.js';
 import { spawnAgentCli } from './spawn.js';
 
@@ -131,6 +142,12 @@ Use cases:
   Find what to extract into skills, rules, FAQs, automations
     $ asa distill --since 60d                    # deterministic recurrence stats, local only
     $ asa distill --suggest claude               # + model recommendations (or --suggest codex)
+
+  Understand a repo's whole agent history
+    $ asa project ~/Projects/botyard             # dossier: spend, steering, instruction surfaces
+    $ asa efficacy ~/Projects/botyard            # did CLAUDE.md edits reduce corrections?
+    $ asa intents --since 30d                    # what you use agents for, per repo
+    $ asa intents --deep claude                  # + model-named recurring themes, shipped or not
 
   Feed a dashboard or jq pipeline
     $ asa analyze -c <id> --json | jq '.totals'
@@ -364,6 +381,87 @@ Examples:
   );
 
 const collect = (value: string, previous: string[] = []) => [...previous, value];
+
+/** Sessions whose header cwd matches the repo (or lives under it). */
+async function loadSessionsForRepo(repoRoot: string, limit: number): Promise<NormalizedSession[]> {
+  const all = await loadSessionsInScope({ agent: 'all', limit: String(limit) });
+  return all.filter((s) => s.cwd === repoRoot || s.cwd?.startsWith(repoRoot + '/'));
+}
+
+program
+  .command('project [path]')
+  .description(
+    'Project dossier: every session for one repo (both agents) — spend, steering, tools, content volume, and the instruction surfaces (CLAUDE.md, AGENTS.md, skills, hooks) shaping agent behavior there',
+  )
+  .option('-n, --limit <n>', 'max sessions to scan (newest first)', '200')
+  .option('--json', 'output the dossier as JSON')
+  .action(async (path: string | undefined, opts: { limit: string; json?: boolean }) => {
+    const repoRoot = resolveRepoRoot(path ?? process.cwd());
+    const sessions = await loadSessionsForRepo(repoRoot, Number(opts.limit));
+    if (!sessions.length) throw new Error(`No sessions found for ${repoRoot}`);
+    const corrections = sessions.map(
+      (s) => collectStepSignals(s).filter((sig) => sig.features.isCorrection).length,
+    );
+    const dossier = buildProjectDossier(repoRoot, sessions, corrections);
+    console.log(opts.json ? JSON.stringify(dossier, null, 2) : renderDossier(dossier));
+  });
+
+program
+  .command('efficacy [path]')
+  .description(
+    'Did your CLAUDE.md / AGENTS.md edits work? Steering metrics (corrections, interruptions per prompt) before vs after each instruction-file commit',
+  )
+  .option('-n, --limit <n>', 'max sessions to scan (newest first)', '200')
+  .option('--window <k>', 'sessions per side of each change', '10')
+  .option('--json', 'output entries as JSON')
+  .action(
+    async (path: string | undefined, opts: { limit: string; window: string; json?: boolean }) => {
+      const repoRoot = resolveRepoRoot(path ?? process.cwd());
+      const changes = readInstructionChanges(repoRoot);
+      const sessions = await loadSessionsForRepo(repoRoot, Number(opts.limit));
+      const entries = computeEfficacy(changes, steeringSamples(sessions), Number(opts.window));
+      console.log(opts.json ? JSON.stringify(entries, null, 2) : renderEfficacy(entries));
+    },
+  );
+
+program
+  .command('intents')
+  .description(
+    'What do you actually use the agents for? Classify session intents (feature/bugfix/refactor/research/ops/learning), per-repo mix, and — with --deep — model-named recurring themes flagged shipped/unshipped via PR links',
+  )
+  .option('--agent <agent>', AGENT_FILTER_VALUES, 'all')
+  .option('-n, --limit <n>', 'max sessions to load (newest first)', '50')
+  .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
+  .option('--deep <backend>', 'name recurring themes via a model (claude | codex)')
+  .option('--model <model>', 'model for --deep claude')
+  .option('--json', 'output the report as JSON')
+  .action(
+    async (opts: {
+      agent: string;
+      limit: string;
+      since?: string;
+      deep?: string;
+      model?: string;
+      json?: boolean;
+    }) => {
+      const sessions = await loadSessionsInScope(opts);
+      if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
+      let report = buildIntentReport(sessions);
+      if (opts.deep) {
+        if (opts.deep !== 'claude' && opts.deep !== 'codex') {
+          throw new Error(`--deep must be claude or codex, got "${opts.deep}"`);
+        }
+        try {
+          report = await deepenIntentReport(report, opts.deep, { model: opts.model });
+        } catch (err) {
+          console.error(
+            `--deep failed (${err instanceof Error ? err.message : err}) — continuing with heuristics`,
+          );
+        }
+      }
+      console.log(opts.json ? JSON.stringify(report, null, 2) : renderIntents(report));
+    },
+  );
 
 program
   .command('compare')

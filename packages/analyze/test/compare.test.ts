@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { emptyInteractionCounts, emptyUsage, type NormalizedSession } from '@asa/core';
+import { emptyContentVolume,
+  emptyInteractionCounts, emptyUsage, type NormalizedSession } from '@asa/core';
 import { analyzeSession } from '../src/analyze.js';
 import { compareReports, renderComparison } from '../src/compare.js';
 
@@ -13,6 +14,7 @@ function session(outputTokens: number, steps: number): NormalizedSession {
     usage: { ...emptyUsage(), outputTokens, totalTokens: outputTokens },
     subagents: [],
     interactions: emptyInteractionCounts(),
+    contentVolume: emptyContentVolume(),
     steps: Array.from({ length: steps }, (_, i) => ({
       id: `s${i}`,
       index: i,

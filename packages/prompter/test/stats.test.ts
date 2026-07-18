@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  emptyContentVolume,
   emptyInteractionCounts,
   emptyUsage,
   type NormalizedSession,
@@ -35,6 +36,7 @@ function session(steps: Step[], overrides: Partial<NormalizedSession> = {}): Nor
     usage: emptyUsage(),
     subagents: [],
     interactions: emptyInteractionCounts(),
+    contentVolume: emptyContentVolume(),
     ...overrides,
   };
 }

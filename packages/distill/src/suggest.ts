@@ -68,9 +68,17 @@ export function suggestInvocation(backend: SuggestBackend, prompt: string, model
   return { command: 'codex', args: ['exec', '--skip-git-repo-check', prompt] };
 }
 
-export async function runSuggest(stats: DistillStats, options: SuggestOptions): Promise<string> {
-  const prompt = buildSuggestPrompt(stats, options.template);
-  const { command, args } = suggestInvocation(options.backend, prompt, options.model);
+/** Run any prompt through a headless claude/codex call. Generic model access for asa features. */
+export async function runModel(
+  backend: SuggestBackend,
+  prompt: string,
+  options: { model?: string; runner?: (command: string, args: string[]) => Promise<string> } = {},
+): Promise<string> {
+  const { command, args } = suggestInvocation(backend, prompt, options.model);
   const runner = options.runner ?? defaultRunner;
   return (await runner(command, args)).trim();
+}
+
+export async function runSuggest(stats: DistillStats, options: SuggestOptions): Promise<string> {
+  return runModel(options.backend, buildSuggestPrompt(stats, options.template), options);
 }

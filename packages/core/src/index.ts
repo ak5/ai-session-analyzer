@@ -108,6 +108,24 @@ export interface SubagentInfo {
   durationMs?: number;
 }
 
+/**
+ * Char-count attribution of session input content. A cost *proxy*: token
+ * usage is only recorded per API response and can't be split by source, but
+ * character volume by origin is exact and comparable across sessions.
+ */
+export interface ContentVolume {
+  /** Text the human actually typed (prompts, command args). */
+  humanPromptChars: number;
+  /** Harness-injected context: system reminders, CLAUDE.md/memory blocks, attachments, base instructions. */
+  harnessInjectedChars: number;
+  /** Tool results fed back into context. */
+  toolResultChars: number;
+}
+
+export function emptyContentVolume(): ContentVolume {
+  return { humanPromptChars: 0, harnessInjectedChars: 0, toolResultChars: 0 };
+}
+
 export interface NormalizedSession {
   agent: AgentKind;
   id: string;
@@ -127,6 +145,7 @@ export interface NormalizedSession {
   usage: UsageTotals;
   subagents: SubagentInfo[];
   interactions: InteractionCounts;
+  contentVolume: ContentVolume;
 }
 
 export interface SessionRef {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { emptyInteractionCounts, emptyUsage, type NormalizedSession } from '@asa/core';
+import { emptyContentVolume,
+  emptyInteractionCounts, emptyUsage, type NormalizedSession } from '@asa/core';
 import { analyzePrompter } from '../src/stats.js';
 import { renderPrompterReport } from '../src/render.js';
 
@@ -12,6 +13,7 @@ const session: NormalizedSession = {
   usage: emptyUsage(),
   subagents: [],
   interactions: emptyInteractionCounts(),
+    contentVolume: emptyContentVolume(),
   steps: [
     {
       id: 'u1',
