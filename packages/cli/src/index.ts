@@ -48,7 +48,6 @@ import {
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { colocateJj, installGitTraceHooks, resolveRepoRoot } from './hooks-install.js';
-import { installUndoRedo } from './undo-redo.js';
 import { enrichRefs, groupByProject, type ListedRef } from './list.js';
 import { spawnAgentCli } from './spawn.js';
 
@@ -574,9 +573,8 @@ program
   )
   .option('--retention-days <n>', 'retention to offer', String(DEFAULT_RETENTION_DAYS))
   .option('--no-jj', 'skip offering jj colocation with the repo hooks')
-  .option('--undo-redo', 'offer the experimental undo/redo install step')
   .option('--yes', 'apply all offered steps without asking')
-  .action(async (opts: { retentionDays: string; jj: boolean; undoRedo?: boolean; yes?: boolean }) => {
+  .action(async (opts: { retentionDays: string; jj: boolean; yes?: boolean }) => {
     for (const line of await buildSetupReport()) console.log(`  ${line}`);
 
     // step 1 (global): transcript retention
@@ -616,28 +614,6 @@ program
       }
     }
 
-    // step 4 (global + per-repo, flag-gated): experimental undo/redo
-    const offerUndoRedo = async () => {
-      if (!opts.undoRedo) {
-        console.log('\n(add --undo-redo to include the experimental /undo /redo · $undo $redo step)');
-        return;
-      }
-      console.log(
-        '\nOptional (EXPERIMENTAL): install undo/redo tooling —' +
-          '\n  claude: /undo /redo /undo-stack /undo-reset commands (global, ~/.claude/commands)' +
-          '\n  codex:  $undo $redo $undo-stack $undo-reset skills (global, ~/.codex/skills)' +
-          (repoRoot ? '\n  repo:   arm turn-marking here (.asa/undo-redo marker + trace hook)' : '') +
-          '\nRides the jj op log; codex has no prompt hooks, so its $undo falls back to the' +
-          '\nprevious op (one level) when no turns are marked. Reversible: delete the files.',
-      );
-      if (await askYesNo('  install? [y/N] ', opts.yes, 'undo/redo not installed')) {
-        const { actions } = installUndoRedo({ repoRoot });
-        for (const action of actions) console.log(`  · ${action}`);
-      } else {
-        console.log('Skipped.');
-      }
-    };
-
     // step 3 (per-repo, its own opt-in): jj colocation
     if (repoRoot && opts.jj && !existsSync(join(repoRoot, '.jj'))) {
       console.log(
@@ -652,8 +628,6 @@ program
         console.log('Skipped.');
       }
     }
-
-    await offerUndoRedo();
   });
 
 program

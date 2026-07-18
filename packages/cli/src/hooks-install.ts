@@ -27,7 +27,7 @@ export const HOOK_SCRIPT = `#!/usr/bin/env node
 // ${TRACE_DIR}/${TRACE_FILE} so asa can join session steps to commits.
 // Must never print to stdout (UserPromptSubmit stdout becomes agent context).
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 let input = '';
@@ -54,33 +54,6 @@ process.stdin.on('end', () => {
     try {
       execFileSync('jj', ['status'], { cwd, stdio: 'ignore' });
     } catch {}
-    // undo/redo (opt-in via .asa/undo-redo marker): a prompt marks a turn
-    // boundary — push the current op onto the undo stack, clear redo.
-    // Dedupe against the stack tail so a coexisting global marking hook
-    // doesn't double-push the same op.
-    if (
-      payload.hook_event_name === 'UserPromptSubmit' &&
-      existsSync(join(cwd, '${TRACE_DIR}', 'undo-redo'))
-    ) {
-      try {
-        const op = execFileSync(
-          'jj',
-          ['op', 'log', '--ignore-working-copy', '--limit', '1', '--no-graph', '-T', 'self.id().short()'],
-          { cwd, stdio: ['ignore', 'pipe', 'ignore'] },
-        )
-          .toString()
-          .trim();
-        const sid = payload.session_id || 'default';
-        const undoPath = join(cwd, '.jj', 'undo-stack-' + sid);
-        const tail = existsSync(undoPath)
-          ? readFileSync(undoPath, 'utf8').trim().split('\\n').pop()
-          : undefined;
-        if (op && op !== tail) {
-          appendFileSync(undoPath, op + '\\n');
-          writeFileSync(join(cwd, '.jj', 'redo-stack-' + sid), '');
-        }
-      } catch {}
-    }
   }
   const line = {
     ts: new Date().toISOString(),

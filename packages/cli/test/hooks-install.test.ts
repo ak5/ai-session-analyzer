@@ -91,31 +91,6 @@ describe('the hook script itself', () => {
     expect(last.dirty_files).toBeGreaterThanOrEqual(1);
   });
 
-  it('marks turn boundaries onto the undo stack when armed, with tail dedupe', () => {
-    installGitTraceHooks(repo);
-    // arm the marker and a fake .jj + fake jj binary (CI has no real jj)
-    mkdirSync(join(repo, '.jj'), { recursive: true });
-    mkdirSync(join(repo, '.asa'), { recursive: true });
-    writeFileSync(join(repo, '.asa', 'undo-redo'), 'armed\n');
-    const fakeBin = join(repo, 'fakebin');
-    mkdirSync(fakeBin, { recursive: true });
-    writeFileSync(join(fakeBin, 'jj'), '#!/bin/sh\necho fakeop123\n', { mode: 0o755 });
-
-    const payload = JSON.stringify({
-      cwd: repo,
-      hook_event_name: 'UserPromptSubmit',
-      session_id: 'sess-mark',
-    });
-    const env = { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` };
-    spawnSync('node', [join(repo, '.asa/hooks/git-trace.mjs')], { cwd: repo, input: payload, env });
-    spawnSync('node', [join(repo, '.asa/hooks/git-trace.mjs')], { cwd: repo, input: payload, env });
-
-    const stack = readFileSync(join(repo, '.jj', 'undo-stack-sess-mark'), 'utf8').trim().split('\n');
-    // second identical op deduped against the tail
-    expect(stack).toEqual(['fakeop123']);
-    expect(readFileSync(join(repo, '.jj', 'redo-stack-sess-mark'), 'utf8')).toBe('');
-  });
-
   it('survives garbage stdin without crashing', () => {
     const run = spawnSync('node', [join(repo, '.asa/hooks/git-trace.mjs')], {
       cwd: repo,
