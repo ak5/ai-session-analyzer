@@ -270,6 +270,29 @@ export async function readFirstJsonlObjects(
   }
 }
 
+/** Read the last few records of a JSONL file without loading it all (tail counterpart of readFirstJsonlObjects). */
+export async function readLastJsonlObjects(
+  filePath: string,
+  maxRecords = 20,
+  maxBytes = 256 * 1024,
+): Promise<unknown[]> {
+  const { open, stat } = await import('node:fs/promises');
+  const size = (await stat(filePath)).size;
+  const readBytes = Math.min(size, maxBytes);
+  const handle = await open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(readBytes);
+    await handle.read(buffer, 0, readBytes, size - readBytes);
+    let text = buffer.toString('utf8');
+    // unless we read the whole file, the first line is probably truncated
+    if (readBytes < size) text = text.slice(text.indexOf('\n') + 1);
+    const records = parseJsonl(text);
+    return records.slice(-maxRecords);
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Parse a JSONL buffer tolerantly: unparseable lines are skipped. */
 export function parseJsonl<T = unknown>(text: string): T[] {
   const out: T[] = [];

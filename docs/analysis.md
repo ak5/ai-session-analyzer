@@ -45,6 +45,17 @@ both agents.
   untracked-outcomes (long sessions producing no commit, PR, or issue — their
   decisions live only in the transcript; end them by filing what came up).
 
+## Model-call confirmation
+
+Every flag that spends tokens (`prompter --deep`, `distill --suggest`,
+`intents --deep`) is gated: asa builds the exact prompt it would send, prints an
+input-token estimate (chars/4, stated as such) plus an expected-output range, and
+— where a local source exists — current quota: Codex records rate-limit state
+(`used_percent`, window, reset) in every rollout's `token_count` events, so asa
+reads the newest rollout's tail; Claude Code exposes nothing locally. Then it
+asks `proceed? [y/N]` on a TTY, or skips the call in non-interactive runs unless
+`--yes` is passed.
+
 **Exclusions:** Codex subagent rollouts carry machine-written "user" prompts and
 are excluded by default (`--include-subagents` keeps them). Sessions created by
 asa's own model calls are always excluded (see the sentinel below).

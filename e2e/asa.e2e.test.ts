@@ -263,6 +263,15 @@ describe.skipIf(!claudeId && !codexId)(`distill e2e (${setupHint})`, () => {
     expect(Array.isArray(stats.toolSequences)).toBe(true);
   });
 
+  it('gates --suggest behind a token estimate and skips without --yes in non-TTY', async () => {
+    const res = await asa('distill', '--suggest', 'claude');
+    expect(res.code).toBe(0);
+    expect(res.stderr).toContain('input tokens (est. chars/4)');
+    expect(res.stderr).toContain('pass --yes to proceed');
+    // the model call must not have happened
+    expect(res.stdout).not.toContain('asking claude');
+  });
+
   it('rejects unknown --suggest backends', async () => {
     const res = await asa('distill', '--suggest', 'gemini');
     expect(res.code).toBe(1);

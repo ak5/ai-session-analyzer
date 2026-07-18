@@ -5,6 +5,7 @@ import { listInstalledClaudeCommands } from '@asa/claude-sessions';
 import { listInstalledCodexCommands } from '@asa/codex-sessions';
 import {
   analyzePrompter,
+  buildJudgePrompt,
   collectStepSignals,
   judgePrompts,
   renderPrompterReport,
@@ -13,11 +14,13 @@ import {
 } from '@asa/prompter';
 import {
   buildDistillStats,
+  buildSuggestPrompt,
   isInternalSession,
   renderDistillStats,
   runSuggest,
   type SuggestBackend,
 } from '@asa/distill';
+import { confirmModelCall } from './confirm.js';
 import {
   AGENT_FILTER_VALUES,
   AGENTS,
@@ -27,6 +30,7 @@ import {
 } from './agents.js';
 import {
   buildIntentReport,
+  buildIntentThemesPrompt,
   buildProjectDossier,
   computeEfficacy,
   deepenIntentReport,
@@ -330,6 +334,7 @@ program
   .option('--include-subagents', 'keep agent-spawned sessions (their prompts are machine-written)')
   .option('--deep', 'add an LLM-judge pass: sampled prompts graded via `claude -p` (haiku)')
   .option('--sample <k>', 'prompts to sample for --deep', '10')
+  .option('--yes', 'skip the token-estimate confirmation for --deep')
   .option('--model <model>', 'judge model for --deep', 'haiku')
   .option('--json', 'output the full report as JSON')
   .addHelpText(
@@ -354,6 +359,7 @@ Examples:
       since?: string;
       includeSubagents?: boolean;
       deep?: boolean;
+      yes?: boolean;
       sample: string;
       model: string;
       json?: boolean;
@@ -365,12 +371,21 @@ Examples:
       let judge: JudgeResult | undefined;
       if (opts.deep) {
         const samples = selectJudgeSamples(sessions.flatMap(collectStepSignals), Number(opts.sample));
-        try {
-          judge = await judgePrompts(samples, { model: opts.model });
-        } catch (err) {
-          console.error(
-            `--deep judge failed (${err instanceof Error ? err.message : err}) — continuing without it`,
-          );
+        const approved = await confirmModelCall({
+          label: `--deep judge (${samples.length} sampled prompts)`,
+          backend: 'claude',
+          prompt: buildJudgePrompt(samples),
+          outputEstimate: [200, 1500],
+          yes: opts.yes,
+        });
+        if (approved) {
+          try {
+            judge = await judgePrompts(samples, { model: opts.model });
+          } catch (err) {
+            console.error(
+              `--deep judge failed (${err instanceof Error ? err.message : err}) — continuing without it`,
+            );
+          }
         }
       }
 
@@ -435,6 +450,7 @@ program
   .option('-n, --limit <n>', 'max sessions to load (newest first)', '50')
   .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
   .option('--deep <backend>', 'name recurring themes via a model (claude | codex)')
+  .option('--yes', 'skip the token-estimate confirmation for --deep')
   .option('--model <model>', 'model for --deep claude')
   .option('--json', 'output the report as JSON')
   .action(
@@ -443,6 +459,7 @@ program
       limit: string;
       since?: string;
       deep?: string;
+      yes?: boolean;
       model?: string;
       json?: boolean;
     }) => {
@@ -453,12 +470,21 @@ program
         if (opts.deep !== 'claude' && opts.deep !== 'codex') {
           throw new Error(`--deep must be claude or codex, got "${opts.deep}"`);
         }
-        try {
-          report = await deepenIntentReport(report, opts.deep, { model: opts.model });
-        } catch (err) {
-          console.error(
-            `--deep failed (${err instanceof Error ? err.message : err}) — continuing with heuristics`,
-          );
+        const approved = await confirmModelCall({
+          label: `--deep themes (${report.sessions.length} opening prompts)`,
+          backend: opts.deep,
+          prompt: buildIntentThemesPrompt(report),
+          outputEstimate: [100, 800],
+          yes: opts.yes,
+        });
+        if (approved) {
+          try {
+            report = await deepenIntentReport(report, opts.deep, { model: opts.model });
+          } catch (err) {
+            console.error(
+              `--deep failed (${err instanceof Error ? err.message : err}) — continuing with heuristics`,
+            );
+          }
         }
       }
       console.log(opts.json ? JSON.stringify(report, null, 2) : renderIntents(report));
@@ -547,6 +573,7 @@ program
   )
   .option('--model <model>', 'model for --suggest claude (codex uses its configured default)')
   .option('--prompt-file <path>', 'override the suggest prompt template with a file')
+  .option('--yes', 'skip the token-estimate confirmation for --suggest')
   .option('--json', 'output the raw stats as JSON')
   .addHelpText(
     'after',
@@ -576,6 +603,7 @@ Examples:
       since?: string;
       includeSubagents?: boolean;
       suggest?: string;
+      yes?: boolean;
       model?: string;
       promptFile?: string;
       json?: boolean;
@@ -604,14 +632,17 @@ Examples:
         const template = opts.promptFile
           ? await (await import('node:fs/promises')).readFile(opts.promptFile, 'utf8')
           : undefined;
+        const backend = opts.suggest as SuggestBackend;
+        const approved = await confirmModelCall({
+          label: '--suggest recommendations',
+          backend,
+          prompt: buildSuggestPrompt(stats, template),
+          outputEstimate: [500, 3000],
+          yes: opts.yes,
+        });
+        if (!approved) return;
         console.log(`\n— asking ${opts.suggest} for recommendations…\n`);
-        console.log(
-          await runSuggest(stats, {
-            backend: opts.suggest as SuggestBackend,
-            model: opts.model,
-            template,
-          }),
-        );
+        console.log(await runSuggest(stats, { backend, model: opts.model, template }));
       }
     },
   );
