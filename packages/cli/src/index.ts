@@ -174,7 +174,7 @@ program
       'and profile the human driving them. Wraps the real claude/codex binaries; never\n' +
       'reimplements them. Session ids accept unique prefixes everywhere.',
   )
-  .version('1.0.0-rc.2')
+  .version('1.0.0-rc.3')
   .addHelpText('after', USE_CASES);
 
 function listRow(ref: ListedRef | SessionRef, indent = ''): string {
