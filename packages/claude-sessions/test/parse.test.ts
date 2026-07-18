@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { parseJsonl } from '@asa/core';
 import { forkClaudeSessionAtStep } from '../src/fork.js';
 import { normalizeClaudeRecords, readClaudeSessionCwd } from '../src/parse.js';
+import { annotateStepsWithGitTrace } from '../src/trace.js';
 import type { ClaudeRecord } from '../src/records.js';
 
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -258,6 +259,29 @@ describe('normalizeClaudeRecords — compaction and subagents', () => {
     const records = fixtureRecords();
     records.push({ type: 'ai-title', aiTitle: 'My session', sessionId: SESSION_ID });
     expect(normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`).title).toBe('My session');
+  });
+});
+
+describe('annotateStepsWithGitTrace', () => {
+  it('joins nearest UserPromptSubmit events onto steps within the window', () => {
+    const session = normalizeClaudeRecords(fixtureRecords(), `/x/${SESSION_ID}.jsonl`);
+    annotateStepsWithGitTrace(session, [
+      { ts: '2026-07-17T10:00:01Z', event: 'UserPromptSubmit', session_id: SESSION_ID, head: 'a'.repeat(40), dirty_files: 2 },
+      { ts: '2026-07-17T10:05:00Z', event: 'UserPromptSubmit', session_id: SESSION_ID, head: 'b'.repeat(40), dirty_files: 0 },
+      { ts: '2026-07-17T10:05:00Z', event: 'Stop', session_id: SESSION_ID, head: 'c'.repeat(40) },
+      { ts: '2026-07-17T10:05:00Z', event: 'UserPromptSubmit', session_id: 'other-session', head: 'd'.repeat(40) },
+    ]);
+    expect(session.steps[0]!.gitHead).toBe('a'.repeat(40));
+    expect(session.steps[0]!.gitDirtyFiles).toBe(2);
+    expect(session.steps[1]!.gitHead).toBe('b'.repeat(40));
+  });
+
+  it('leaves steps unannotated when no event is close enough', () => {
+    const session = normalizeClaudeRecords(fixtureRecords(), `/x/${SESSION_ID}.jsonl`);
+    annotateStepsWithGitTrace(session, [
+      { ts: '2026-07-17T11:00:00Z', event: 'UserPromptSubmit', session_id: SESSION_ID, head: 'a'.repeat(40) },
+    ]);
+    expect(session.steps.every((s) => s.gitHead === undefined)).toBe(true);
   });
 });
 

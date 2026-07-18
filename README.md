@@ -25,6 +25,9 @@ asa prompter --deep                       # + LLM-judge pass (one batched haiku 
 
 asa distill --since 60d                   # recurrence stats: what should become a skill/FAQ/rule
 asa distill --suggest claude|codex        # + model recommendations from those stats
+
+asa compare -c <a> -c <b>                 # metric deltas: original vs fork/replay, or -c vs -o
+asa install-hooks [repo] [--jj]           # per-prompt git tracing (+ jj op-log snapshots)
 ```
 
 Session selectors: `-c/--claude <id>` and `-o/--codex <id>` (`-o` as in OpenAI).
@@ -134,6 +137,22 @@ in two layers:
   pass `--prompt-file`. Suggest prompts are stamped `[asa-internal]` and such
   sessions are excluded from all analysis, since `codex exec` always persists a
   rollout and distill must not distill itself.
+
+## Git context per step
+
+Claude transcripts record only a branch name; Codex records one commit hash at
+session start. `asa install-hooks <repo>` closes the gap: it registers Claude Code
+`UserPromptSubmit`/`Stop` hooks (in the repo's `.claude/settings.json`) that append
+`{ts, event, session_id, head, branch, dirty_files}` to a gitignored
+`.asa/git-trace.jsonl`. `loadClaudeSession` joins that trace onto steps by nearest
+timestamp, so `asa analyze` shows the commit each prompt ran against (`head` column)
+and `asa compare` can relate behavior changes to repo changes. The hook writes
+nothing to stdout — `UserPromptSubmit` stdout would leak into agent context.
+
+`--jj` additionally colocates a [jj](https://github.com/jj-vcs/jj) repo
+(`jj git init --colocate`) and the hook then runs `jj status` per event — every
+turn snapshots the working copy into jj's op log, giving commit-free, diffable
+history of what the agent changed between prompts (`jj op log`, `jj op diff`).
 
 ## Development
 

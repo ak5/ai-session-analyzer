@@ -66,6 +66,10 @@ export interface Step {
   promptPreview?: string;
   /** The run was cut short (user interrupt / no task_complete). */
   aborted?: boolean;
+  /** Git HEAD when this prompt was submitted (from an asa git-trace hook). */
+  gitHead?: string;
+  /** Dirty-file count at prompt time (from an asa git-trace hook). */
+  gitDirtyFiles?: number;
   /** Distinct API responses in this step (deduped). */
   apiCalls: number;
   toolCalls: ToolCall[];

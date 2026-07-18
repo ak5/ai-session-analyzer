@@ -213,6 +213,37 @@ describe.skipIf(!claudeId && !codexId)(`prompter e2e (${setupHint})`, () => {
   });
 });
 
+describe.skipIf(!claudeId || !codexId)(`compare e2e (${setupHint})`, () => {
+  it('compares two sessions cross-agent with a delta table', async () => {
+    const res = await asa('compare', '-c', claudeId!, '-o', codexId!);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain(`A: claude`);
+    expect(res.stdout).toContain(`B: codex`);
+    expect(res.stdout).toContain('total tokens');
+    expect(res.stdout).toContain('Δ');
+  });
+
+  it('rejects a single session id', async () => {
+    const res = await asa('compare', '-c', claudeId!);
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('exactly two session ids');
+  });
+});
+
+describe('install-hooks e2e', () => {
+  it('installs trace hooks into a fresh git repo', async () => {
+    const { mkdtempSync } = await import('node:fs');
+    const { execFileSync } = await import('node:child_process');
+    const os = await import('node:os');
+    const repo = mkdtempSync(join(os.tmpdir(), 'asa-e2e-hooks-'));
+    execFileSync('git', ['init', '-q'], { cwd: repo });
+    const res = await asa('install-hooks', repo);
+    expect(res.code).toBe(0);
+    expect(existsSync(join(repo, '.asa/hooks/git-trace.mjs'))).toBe(true);
+    expect(existsSync(join(repo, '.claude/settings.json'))).toBe(true);
+  });
+});
+
 describe.skipIf(!claudeId && !codexId)(`distill e2e (${setupHint})`, () => {
   it('prints deterministic stats with empty-state sections on sparse fixtures', async () => {
     const res = await asa('distill');

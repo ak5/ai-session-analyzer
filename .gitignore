@@ -6,3 +6,4 @@ dist/
 # e2e sandbox homes for claude/codex — contain real session transcripts and
 # copied auth state; must never be committed
 .e2e/
+.asa/

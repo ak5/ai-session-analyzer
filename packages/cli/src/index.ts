@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { previewText, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
-import { analyzeSession, renderReport } from '@asa/analyze';
+import { analyzeSession, renderComparison, renderReport } from '@asa/analyze';
 import {
   analyzePrompter,
   collectStepSignals,
@@ -23,6 +23,7 @@ import {
   agentsForFilter,
   type AgentAdapter,
 } from './agents.js';
+import { installGitTraceHooks } from './hooks-install.js';
 import { enrichRefs, groupByProject, type ListedRef } from './list.js';
 import { spawnAgentCli } from './spawn.js';
 
@@ -361,6 +362,76 @@ Examples:
       }
     },
   );
+
+const collect = (value: string, previous: string[] = []) => [...previous, value];
+
+program
+  .command('compare')
+  .description('Compare two sessions metric by metric (original vs fork, replay, or cross-agent)')
+  .option('-c, --claude <id>', 'claude session id (repeatable)', collect, [])
+  .option('-o, --codex <id>', 'codex session id (repeatable)', collect, [])
+  .option('--json', 'output both reports and the comparison rows as JSON')
+  .addHelpText(
+    'after',
+    `
+Examples:
+  $ asa compare -c <original> -c <fork>       # did the fork do better?
+  $ asa compare -c <claude-id> -o <codex-id>  # same task, different agent
+Order: A = first id given (claude ids first), B = second.
+`,
+  )
+  .action(async (opts: { claude: string[]; codex: string[]; json?: boolean }) => {
+    const byKind = (kind: string) => AGENTS.find((a) => a.kind === kind)!;
+    const selectors = [
+      ...opts.claude.map((id) => ({ agent: byKind('claude'), id })),
+      ...opts.codex.map((id) => ({ agent: byKind('codex'), id })),
+    ];
+    if (selectors.length !== 2) {
+      throw new Error(`compare needs exactly two session ids (got ${selectors.length}) — e.g. asa compare -c <a> -c <b>`);
+    }
+    const reports = await Promise.all(
+      selectors.map(async ({ agent, id }) => {
+        const ref = await agent.find(id);
+        if (!ref) throw new Error(`No ${agent.kind} session matching "${id}"`);
+        return analyzeSession(await agent.load(ref.filePath));
+      }),
+    );
+    const [a, b] = reports;
+    if (opts.json) {
+      const { compareReports } = await import('@asa/analyze');
+      console.log(JSON.stringify({ a, b, rows: compareReports(a!, b!) }, null, 2));
+    } else {
+      console.log(renderComparison(a!, b!));
+    }
+  });
+
+program
+  .command('install-hooks [repo]')
+  .description(
+    'Install per-prompt git tracing into a repo: Claude Code hooks stamp git HEAD + dirty state into .asa/git-trace.jsonl, and asa analyze joins commits onto steps',
+  )
+  .option('--jj', 'also colocate a jj repo (jj git init --colocate) so every turn snapshots the working copy into the jj op log')
+  .addHelpText(
+    'after',
+    `
+Notes:
+  Idempotent. Writes .asa/hooks/git-trace.mjs, registers UserPromptSubmit + Stop
+  hooks in the repo's .claude/settings.json, and gitignores .asa/. The hook never
+  writes to stdout (UserPromptSubmit stdout would leak into agent context).
+  Codex already records commit_hash at session start; it has no per-turn hook
+  surface today, so tracing is Claude-only.
+
+Examples:
+  $ asa install-hooks                 # current directory
+  $ asa install-hooks ~/Projects/botyard --jj
+`,
+  )
+  .action(async (repo: string | undefined, opts: { jj?: boolean }) => {
+    const target = repo ?? process.cwd();
+    const { actions } = installGitTraceHooks(target, { jj: opts.jj });
+    console.log(`install-hooks in ${target}:`);
+    for (const action of actions) console.log(`  · ${action}`);
+  });
 
 program
   .command('distill')

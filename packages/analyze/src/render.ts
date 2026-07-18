@@ -82,16 +82,18 @@ export function renderReport(report: AnalysisReport): string {
   }
 
   if (session.steps.length) {
+    const withHead = session.steps.some((s) => s.gitHead);
     out.push('', 'Steps (use the step id with `asa fork --at <id>`):');
     out.push(
       table(
-        ['#', 'step id', 'api', 'tools', 'tokens in/out', 'prompt'],
+        ['#', 'step id', 'api', 'tools', 'tokens in/out', ...(withHead ? ['head'] : []), 'prompt'],
         session.steps.map((s) => [
           `${s.index + 1}${s.aborted ? '!' : ''}`,
           session.agent === 'claude' ? s.id : shortId(s.id),
           fmt(s.apiCalls),
           fmt(s.toolCalls.length),
           `${fmt(s.usage.inputTokens)}/${fmt(s.usage.outputTokens)}`,
+          ...(withHead ? [s.gitHead ? s.gitHead.slice(0, 7) + (s.gitDirtyFiles ? `+${s.gitDirtyFiles}` : '') : ''] : []),
           (s.kind === 'command' ? `${s.commandName ?? '(command)'} ` : '') + (s.promptPreview ?? ''),
         ]),
       ),

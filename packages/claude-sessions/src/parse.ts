@@ -21,6 +21,7 @@ import {
   type ClaudeApiUsage,
   type ClaudeRecord,
 } from './records.js';
+import { annotateSessionWithGitTrace } from './trace.js';
 
 export async function readClaudeRecords(filePath: string): Promise<ClaudeRecord[]> {
   return parseJsonl<ClaudeRecord>(await readFile(filePath, 'utf8'));
@@ -35,7 +36,9 @@ export async function readClaudeSessionCwd(filePath: string): Promise<string | u
 }
 
 export async function loadClaudeSession(filePath: string): Promise<NormalizedSession> {
-  return normalizeClaudeRecords(await readClaudeRecords(filePath), filePath);
+  const session = normalizeClaudeRecords(await readClaudeRecords(filePath), filePath);
+  await annotateSessionWithGitTrace(session);
+  return session;
 }
 
 function usageDelta(usage: ClaudeApiUsage | undefined) {
