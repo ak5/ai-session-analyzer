@@ -232,6 +232,14 @@ describe.skipIf(!claudeId || !codexId)(`compare e2e (${setupHint})`, () => {
 
 describe('setup e2e', () => {
   it('reports the environment and applies retention only with --yes', async () => {
+    // reset: prior suite runs may have set retention in the sandbox home
+    const settingsPath = join(claudeHome, 'settings.json');
+    if (existsSync(settingsPath)) {
+      const settings = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+      delete settings.cleanupPeriodDays;
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(settingsPath, JSON.stringify(settings));
+    }
     const report = await asa('setup');
     expect(report.code).toBe(0);
     expect(report.stdout).toContain('transcript retention');

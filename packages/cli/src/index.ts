@@ -567,28 +567,50 @@ Examples:
 program
   .command('setup')
   .description(
-    'Onboarding check: binaries, session stores, stats-cache — and one optional change: raise Claude transcript retention so longitudinal analysis (efficacy, skill curve, models) can see further back',
+    'Onboarding: environment report, then optional confirmed steps — raise Claude transcript retention (globally), and install per-prompt git tracing (+ jj colocation) into the current repo',
   )
   .option('--retention-days <n>', 'retention to offer', String(DEFAULT_RETENTION_DAYS))
-  .option('--yes', 'apply the retention change without asking')
-  .action(async (opts: { retentionDays: string; yes?: boolean }) => {
+  .option('--no-jj', 'skip offering jj colocation with the repo hooks')
+  .option('--yes', 'apply all offered steps without asking')
+  .action(async (opts: { retentionDays: string; jj: boolean; yes?: boolean }) => {
     for (const line of await buildSetupReport()) console.log(`  ${line}`);
 
+    // step 1 (global): transcript retention
     const target = Number(opts.retentionDays);
     const retention = readRetention();
     if (retention.effective >= target) {
       console.log(`\nRetention already ${retention.effective} days — nothing to change.`);
-      return;
-    }
-    console.log(
-      `\nOptional: raise cleanupPeriodDays ${retention.current === undefined ? '(unset, default 30)' : `from ${retention.current}`} to ${target} in ${retention.settingsPath}.` +
-        '\nEvery longitudinal asa feature gets smarter with more history; transcripts are plain text and cheap to keep.',
-    );
-    if (await askYesNo(`  apply? [y/N] `, opts.yes, 'retention unchanged')) {
-      writeRetention(retention.settingsPath, target);
-      console.log(`Set cleanupPeriodDays = ${target}.`);
     } else {
-      console.log('Left unchanged.');
+      console.log(
+        `\nOptional: raise cleanupPeriodDays ${retention.current === undefined ? '(unset, default 30)' : `from ${retention.current}`} to ${target} in ${retention.settingsPath}.` +
+          '\nEvery longitudinal asa feature gets smarter with more history; transcripts are plain text and cheap to keep.',
+      );
+      if (await askYesNo('  apply? [y/N] ', opts.yes, 'retention unchanged')) {
+        writeRetention(retention.settingsPath, target);
+        console.log(`Set cleanupPeriodDays = ${target}.`);
+      } else {
+        console.log('Left unchanged.');
+      }
+    }
+
+    // step 2 (per-repo): git-trace hooks + jj, when run inside a repo
+    let repoRoot: string | undefined;
+    try {
+      repoRoot = resolveRepoRoot(process.cwd());
+    } catch {
+      console.log('\nNot inside a git repo — skipping per-repo git tracing (run `asa setup` from a repo, or `asa install-hooks <path>`).');
+    }
+    if (repoRoot) {
+      console.log(
+        `\nOptional: install per-prompt git tracing into ${repoRoot}` +
+          `${opts.jj ? ' (+ jj colocation for op-log snapshots of AI edits)' : ''} — asa analyze then shows the commit each prompt ran against.`,
+      );
+      if (await askYesNo('  install? [y/N] ', opts.yes, 'hooks not installed')) {
+        const { actions } = installGitTraceHooks(repoRoot, { jj: opts.jj });
+        for (const action of actions) console.log(`  · ${action}`);
+      } else {
+        console.log('Skipped.');
+      }
     }
   });
 
