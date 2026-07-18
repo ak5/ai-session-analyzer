@@ -142,6 +142,22 @@ before vs after every CLAUDE.md/AGENTS.md commit (finally: did that rule *work*?
 and per-repo intent mix, with `--deep` naming recurring themes flagged
 shipped/unshipped via PR links.
 
+**`asa models --since 60d`** — model archaeology. Per-model API calls, share,
+favorites, and a weekly dominant-model timeline with switch detection (Codex
+reasoning effort included) — plus a long-range era history from Claude's
+`stats-cache.json`, whose daily per-model token matrix reaches months beyond
+transcript retention:
+
+```console
+Era changes (weekly dominant by tokens):
+  week of 2026-05-25: claude-opus-4-7 → claude-opus-4-8
+  week of 2026-07-13: claude-opus-4-8 → claude-fable-5
+```
+
+Model-spending flags everywhere (`--deep`, `--suggest`) are gated behind a token
+estimate plus your live quota (Codex: rollout rate-limit events; Claude: headless
+`claude -p "/usage"`) and a `proceed? [y/N]` — `--yes` to skip.
+
 **`asa install-hooks [repo] [--jj]`** — git context per step. Claude Code hooks stamp
 git HEAD + dirty state per prompt into a gitignored trace; `analyze` then shows the
 commit each step ran against. `--jj` snapshots the working copy into
