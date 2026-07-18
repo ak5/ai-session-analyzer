@@ -5,6 +5,7 @@
     { "path": "packages/claude-sessions" },
     { "path": "packages/codex-sessions" },
     { "path": "packages/analyze" },
+    { "path": "packages/prompter" },
     { "path": "packages/cli" }
   ]
 }

@@ -70,23 +70,6 @@ export function contentBlocks(message: ClaudeMessage | undefined): ClaudeContent
   return Array.isArray(content) ? content : [];
 }
 
-/**
- * A "real" user prompt (step boundary): a user record that is not meta, not a
- * compact summary, not a sidechain record, and not a tool_result carrier.
- */
-export function isPromptRecord(record: ClaudeRecord): boolean {
-  if (record.type !== 'user' || record.isMeta || record.isCompactSummary || record.isSidechain) {
-    return false;
-  }
-  const content = record.message?.content;
-  if (typeof content === 'string') return content.trim().length > 0;
-  if (Array.isArray(content)) {
-    if (content.some((b) => b.type === 'tool_result')) return false;
-    return content.some((b) => b.type === 'text' && typeof b.text === 'string');
-  }
-  return false;
-}
-
 export function promptText(record: ClaudeRecord): string {
   const content = record.message?.content;
   if (typeof content === 'string') return content;
@@ -97,4 +80,53 @@ export function promptText(record: ClaudeRecord): string {
       .join('\n');
   }
   return '';
+}
+
+/** What a non-meta user record represents, for step-splitting and human-signal counting. */
+export type UserRecordKind =
+  /** free-text prompt — starts a step */
+  | 'prompt'
+  /** slash-command invocation (<command-name> marker) — starts a step */
+  | 'command'
+  /** "[Request interrupted…]" marker — counts as an interruption, not a step */
+  | 'interruption'
+  /** <local-command-stdout> echo of a command's output — ignored */
+  | 'command-output'
+  /** tool_result carrier / meta / sidechain / compact summary / empty */
+  | 'other';
+
+const COMMAND_NAME_RE = /<command-name>\s*([^<\n]+?)\s*<\/command-name>/;
+const COMMAND_ARGS_RE = /<command-args>\s*([\s\S]*?)\s*<\/command-args>/;
+
+// Harness-injected user records that carry no human text. Deliberately an
+// explicit list, not "starts with <": humans do paste XML/HTML into prompts.
+const HARNESS_TAG_RE = /^<(system-reminder|task-notification|background-task|tool-reminder)\b/;
+
+export function classifyUserRecord(record: ClaudeRecord): UserRecordKind {
+  if (record.type !== 'user' || record.isMeta || record.isCompactSummary || record.isSidechain) {
+    return 'other';
+  }
+  const content = record.message?.content;
+  if (Array.isArray(content) && content.some((b) => b.type === 'tool_result')) return 'other';
+  const text = promptText(record).trim();
+  if (!text) return 'other';
+  if (text.startsWith('[Request interrupted')) return 'interruption';
+  if (COMMAND_NAME_RE.test(text)) return 'command';
+  if (text.startsWith('<local-command-stdout>')) return 'command-output';
+  if (HARNESS_TAG_RE.test(text)) return 'other';
+  return 'prompt';
+}
+
+/** For a 'command' record: the command name, and its args as the prompt text. */
+export function commandParts(record: ClaudeRecord): { name: string; args?: string } {
+  const text = promptText(record);
+  const name = COMMAND_NAME_RE.exec(text)?.[1] ?? '(unknown)';
+  const args = COMMAND_ARGS_RE.exec(text)?.[1] || undefined;
+  return { name, args };
+}
+
+/** A step boundary: a real prompt or a slash-command invocation. */
+export function isPromptRecord(record: ClaudeRecord): boolean {
+  const kind = classifyUserRecord(record);
+  return kind === 'prompt' || kind === 'command';
 }

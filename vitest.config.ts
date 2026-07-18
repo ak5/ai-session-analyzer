@@ -12,6 +12,7 @@ export default defineConfig({
       '@asa/claude-sessions': pkg('claude-sessions'),
       '@asa/codex-sessions': pkg('codex-sessions'),
       '@asa/analyze': pkg('analyze'),
+      '@asa/prompter': pkg('prompter'),
     },
   },
   test: {

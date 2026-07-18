@@ -70,11 +70,25 @@ const codexId = findCodexFixtureId();
 const setupHint = 'no fixture — run `pnpm e2e:setup` (or `pnpm e2e:setup --synthetic`) first';
 
 describe('asa (no fixtures needed)', () => {
-  it('prints help', async () => {
+  it('prints help with every command and the use-case examples', async () => {
     const res = await asa('--help');
     expect(res.code).toBe(0);
     expect(res.stdout).toContain('ai session analyzer');
-    expect(res.stdout).toMatch(/analyze[\s\S]*resume[\s\S]*fork/);
+    for (const cmd of ['list', 'analyze', 'resume', 'fork', 'prompter']) {
+      expect(res.stdout).toContain(cmd);
+    }
+    expect(res.stdout).toContain('Use cases:');
+    expect(res.stdout).toContain('asa fork --claude-session <id> --at <stepId>');
+  });
+
+  it('documents fork --at and prompter --deep in subcommand help', async () => {
+    const fork = await asa('fork', '--help');
+    expect(fork.stdout).toContain('--at <stepId>');
+    // wrap-safe: commander reflows help text at terminal width
+    expect(fork.stdout.replace(/\s+/g, ' ')).toContain('not a stable contract');
+    const prompter = await asa('prompter', '--help');
+    expect(prompter.stdout).toContain('--deep');
+    expect(prompter.stdout).toContain('opt-in');
   });
 
   it('rejects analyze without a session selector', async () => {
@@ -148,6 +162,25 @@ describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
     const res = await asa('fork', '--claude-session', claudeId!, '--dry-run');
     expect(res.code).toBe(0);
     expect(res.stdout).toContain(`claude --resume ${claudeId} --fork-session`);
+  });
+});
+
+describe.skipIf(!claudeId && !codexId)(`prompter e2e (${setupHint})`, () => {
+  it('aggregates fixture sessions into a prompter report', async () => {
+    const res = await asa('prompter', '--json');
+    expect(res.code).toBe(0);
+    const report = JSON.parse(res.stdout);
+    expect(report.totals.sessions).toBeGreaterThanOrEqual(1);
+    expect(report.totals.steps).toBeGreaterThanOrEqual(1);
+    expect(report.archetype.name).toBeTruthy();
+    expect(report.lints.length).toBeGreaterThan(0);
+  });
+
+  it('renders the human-readable report', async () => {
+    const res = await asa('prompter');
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('Prompter report');
+    expect(res.stdout).toContain('Archetype:');
   });
 });
 

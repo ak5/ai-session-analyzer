@@ -43,6 +43,12 @@ export interface ToolCall {
 }
 
 /**
+ * How a step was initiated. `prompt` = free-text user turn; `command` = a
+ * slash-command invocation (`<command-name>` marker in the transcript).
+ */
+export type StepKind = 'prompt' | 'command';
+
+/**
  * A step is one user turn: the prompt plus everything the agent did before
  * the next prompt (API calls, tool calls, subagents).
  */
@@ -50,13 +56,44 @@ export interface Step {
   /** Stable id usable as a fork point: Claude = user-record uuid, Codex = turn_id. */
   id: string;
   index: number;
+  kind: StepKind;
+  /** For kind 'command': the slash command name, e.g. "/goal". */
+  commandName?: string;
   timestamp?: string;
   durationMs?: number;
+  /** Full user prompt text (command args for kind 'command'). */
+  promptText?: string;
   promptPreview?: string;
+  /** The run was cut short (user interrupt / no task_complete). */
+  aborted?: boolean;
   /** Distinct API responses in this step (deduped). */
   apiCalls: number;
   toolCalls: ToolCall[];
   usage: UsageTotals;
+}
+
+/** Human-steering signals counted at session level. */
+export interface InteractionCounts {
+  /** User interrupted a running turn (Claude "[Request interrupted…]" markers / Codex aborted turns). */
+  interruptions: number;
+  /** Slash-command invocations. */
+  commands: number;
+  /** permission-mode toggle events (Claude). */
+  permissionModeChanges: number;
+  /** Prompts queued while a turn was running (Claude queue-operation enqueue). */
+  queuedPrompts: number;
+  /** PRs linked to the session (Claude pr-link records). */
+  prLinks: number;
+}
+
+export function emptyInteractionCounts(): InteractionCounts {
+  return {
+    interruptions: 0,
+    commands: 0,
+    permissionModeChanges: 0,
+    queuedPrompts: 0,
+    prLinks: 0,
+  };
 }
 
 export interface SubagentInfo {
@@ -79,10 +116,13 @@ export interface NormalizedSession {
   startedAt?: string;
   endedAt?: string;
   forkedFromId?: string;
+  /** Spawned by another agent (Codex thread_source "subagent") — its "user" prompts are machine-written. */
+  isSubagent?: boolean;
   compactions: number;
   steps: Step[];
   usage: UsageTotals;
   subagents: SubagentInfo[];
+  interactions: InteractionCounts;
 }
 
 export interface SessionRef {
@@ -103,6 +143,26 @@ export function previewText(text: string, max = 64): string {
 
 export function shortId(id: string): string {
   return id.slice(0, 8);
+}
+
+export function formatNumber(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
+export function formatDuration(ms?: number): string {
+  if (ms === undefined) return '—';
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ${s % 60}s`;
+  return `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+/** Plain-text table: header row, dash rule, padded cells. */
+export function renderTable(headers: string[], rows: string[][]): string {
+  const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)));
+  const line = (cells: string[]) => cells.map((c, i) => c.padEnd(widths[i]!)).join('  ').trimEnd();
+  return [line(headers), line(widths.map((w) => '-'.repeat(w))), ...rows.map(line)].join('\n');
 }
 
 /** Parse a JSONL buffer tolerantly: unparseable lines are skipped. */

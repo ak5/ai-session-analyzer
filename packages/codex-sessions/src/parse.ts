@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import {
   addUsage,
+  emptyInteractionCounts,
   emptyUsage,
   parseJsonl,
   previewText,
@@ -59,6 +60,7 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
     steps: [],
     usage: emptyUsage(),
     subagents: [],
+    interactions: emptyInteractionCounts(),
   };
 
   const models = new Set<string>();
@@ -72,7 +74,13 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
   let stepStart = emptyUsage();
 
   const closeStep = () => {
-    if (currentStep) currentStep.usage = diffUsage(cumulative, stepStart);
+    if (!currentStep) return;
+    currentStep.usage = diffUsage(cumulative, stepStart);
+    // no task_complete arrived for this turn: it was aborted/interrupted
+    if (currentStep.durationMs === undefined) {
+      currentStep.aborted = true;
+      session.interactions.interruptions += 1;
+    }
   };
   const openStep = (id: string, timestamp?: string): Step => {
     closeStep();
@@ -80,7 +88,9 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
     const step: Step = {
       id,
       index: session.steps.length,
+      kind: 'prompt',
       timestamp,
+      promptText: lastUserText,
       promptPreview: lastUserText !== undefined ? previewText(lastUserText) : undefined,
       apiCalls: 0,
       toolCalls: [],
@@ -103,6 +113,12 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
         if (typeof payload.cwd === 'string') session.cwd = payload.cwd;
         if (typeof payload.cli_version === 'string') session.cliVersion = payload.cli_version;
         if (typeof payload.forked_from_id === 'string') session.forkedFromId = payload.forked_from_id;
+        if (
+          payload.thread_source === 'subagent' ||
+          (typeof payload.source === 'object' && payload.source !== null && 'subagent' in payload.source)
+        ) {
+          session.isSubagent = true;
+        }
         const git = payload.git as { branch?: string } | undefined;
         if (git?.branch) session.gitBranch = git.branch;
         break;

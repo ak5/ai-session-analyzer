@@ -2,17 +2,20 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import {
   addUsage,
+  emptyInteractionCounts,
   emptyUsage,
   parseJsonl,
   previewText,
   type NormalizedSession,
   type Step,
+  type StepKind,
   type SubagentInfo,
   type ToolCall,
 } from '@asa/core';
 import {
+  classifyUserRecord,
+  commandParts,
   contentBlocks,
-  isPromptRecord,
   promptText,
   type ClaudeApiUsage,
   type ClaudeRecord,
@@ -61,6 +64,7 @@ export function normalizeClaudeRecords(
     steps: [],
     usage: emptyUsage(),
     subagents: [],
+    interactions: emptyInteractionCounts(),
   };
 
   const models = new Set<string>();
@@ -68,11 +72,19 @@ export function normalizeClaudeRecords(
   const toolCallsById = new Map<string, ToolCall>();
   let currentStep: Step | undefined;
 
-  const openStep = (record: ClaudeRecord, prompt?: string): Step => {
+  const openStep = (
+    record: ClaudeRecord,
+    prompt?: string,
+    kind: StepKind = 'prompt',
+    commandName?: string,
+  ): Step => {
     const step: Step = {
       id: record.uuid ?? `step-${session.steps.length}`,
       index: session.steps.length,
+      kind,
+      commandName,
       timestamp: record.timestamp,
+      promptText: prompt,
       promptPreview: prompt !== undefined ? previewText(prompt) : undefined,
       apiCalls: 0,
       toolCalls: [],
@@ -97,11 +109,29 @@ export function normalizeClaudeRecords(
       session.title = record.aiTitle;
     }
     if (record.isCompactSummary) session.compactions += 1;
+    if (record.type === 'permission-mode') session.interactions.permissionModeChanges += 1;
+    if (record.type === 'pr-link') session.interactions.prLinks += 1;
+    if (record.type === 'queue-operation' && record.operation === 'enqueue') {
+      session.interactions.queuedPrompts += 1;
+    }
 
-    if (isPromptRecord(record)) {
+    const userKind = classifyUserRecord(record);
+    if (userKind === 'prompt') {
       currentStep = openStep(record, promptText(record));
       continue;
     }
+    if (userKind === 'command') {
+      const { name, args } = commandParts(record);
+      session.interactions.commands += 1;
+      currentStep = openStep(record, args, 'command', name);
+      continue;
+    }
+    if (userKind === 'interruption') {
+      session.interactions.interruptions += 1;
+      if (currentStep) currentStep.aborted = true;
+      continue;
+    }
+    if (userKind === 'command-output') continue;
 
     if (record.type === 'assistant' && record.message) {
       // Robustness: activity before any prompt (e.g. hand-crafted transcripts).

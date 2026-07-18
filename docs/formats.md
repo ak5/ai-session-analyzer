@@ -25,7 +25,10 @@ conversation records: `uuid`, `parentUuid` (the DAG), `sessionId`, `cwd`, `gitBr
   plus a structured sibling `toolUseResult` (per-tool shape; for Agent runs it carries
   `agentId`, `totalTokens`, `toolStats`, full `usage`).
 - A "real" user prompt = `type:user`, not `isMeta`, not a `tool_result` carrier, not
-  `isCompactSummary`, not `isSidechain`.
+  `isCompactSummary`, not `isSidechain` — and not one of the in-band text markers:
+  `[Request interrupted…]` (user interrupt), `<command-name>/<command-args>` (slash
+  command invocation), `<local-command-stdout>` (command output echo),
+  `<system-reminder>`/`<task-notification>` (harness-injected context).
 - Compaction: a `user` record with `isCompactSummary:true` + `compactMetadata`
   (`trigger`, `preTokens`, `preservedSegment{headUuid,anchorUuid,tailUuid}`).
 - No cumulative totals stored anywhere; no persistent sessionId→project index

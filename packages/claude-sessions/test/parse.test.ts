@@ -128,6 +128,92 @@ describe('normalizeClaudeRecords', () => {
   });
 });
 
+describe('normalizeClaudeRecords — human signals', () => {
+  it('counts interruptions without creating steps, and marks the aborted step', () => {
+    const records = fixtureRecords();
+    records.splice(4, 0, {
+      sessionId: SESSION_ID,
+      type: 'user',
+      uuid: 'int1',
+      timestamp: '2026-07-17T10:00:08Z',
+      message: { role: 'user', content: '[Request interrupted by user for tool use]' },
+    });
+    const session = normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`);
+    expect(session.interactions.interruptions).toBe(1);
+    expect(session.steps.map((s) => s.id)).toEqual(['u1', 'u3']);
+    expect(session.steps[0]!.aborted).toBe(true);
+    expect(session.steps[1]!.aborted).toBeUndefined();
+  });
+
+  it('turns slash-command invocations into command steps', () => {
+    const records = fixtureRecords();
+    records.push(
+      {
+        sessionId: SESSION_ID,
+        type: 'user',
+        uuid: 'cmd1',
+        timestamp: '2026-07-17T10:06:00Z',
+        message: {
+          role: 'user',
+          content:
+            '<command-message>goal</command-message>\n<command-name>/goal</command-name>\n<command-args>ship the rc</command-args>',
+        },
+      },
+      {
+        sessionId: SESSION_ID,
+        type: 'user',
+        uuid: 'cmdout1',
+        message: { role: 'user', content: '<local-command-stdout>Goal set</local-command-stdout>' },
+      },
+    );
+    const session = normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`);
+    const command = session.steps.at(-1)!;
+    expect(command.kind).toBe('command');
+    expect(command.commandName).toBe('/goal');
+    expect(command.promptText).toBe('ship the rc');
+    expect(session.interactions.commands).toBe(1);
+    // the stdout echo must not have become a step
+    expect(session.steps.map((s) => s.id)).toEqual(['u1', 'u3', 'cmd1']);
+  });
+
+  it('counts permission-mode, queue and pr-link events', () => {
+    const records = fixtureRecords();
+    records.push(
+      { type: 'permission-mode', mode: 'acceptEdits', sessionId: SESSION_ID },
+      { type: 'queue-operation', operation: 'enqueue', content: 'next', sessionId: SESSION_ID },
+      { type: 'queue-operation', operation: 'remove', sessionId: SESSION_ID },
+      { type: 'pr-link', prNumber: 1, sessionId: SESSION_ID },
+    );
+    const session = normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`);
+    expect(session.interactions).toMatchObject({
+      permissionModeChanges: 1,
+      queuedPrompts: 1,
+      prLinks: 1,
+    });
+  });
+
+  it('stores full prompt text on steps', () => {
+    const session = normalizeClaudeRecords(fixtureRecords(), `/x/${SESSION_ID}.jsonl`);
+    expect(session.steps[0]!.promptText).toBe('first prompt');
+    expect(session.steps[0]!.kind).toBe('prompt');
+  });
+
+  it('ignores harness-injected notification records', () => {
+    const records = fixtureRecords();
+    records.push({
+      sessionId: SESSION_ID,
+      type: 'user',
+      uuid: 'notif1',
+      message: {
+        role: 'user',
+        content: '<task-notification>Background task abc completed.</task-notification>',
+      },
+    });
+    const session = normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`);
+    expect(session.steps.map((s) => s.id)).toEqual(['u1', 'u3']);
+  });
+});
+
 describe('normalizeClaudeRecords — compaction and subagents', () => {
   it('counts compact summaries without treating them as steps', () => {
     const records = fixtureRecords();

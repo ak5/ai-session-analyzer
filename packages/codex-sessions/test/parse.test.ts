@@ -124,6 +124,25 @@ describe('normalizeCodexLines', () => {
     expect(session.steps[0]!.durationMs).toBe(4000);
   });
 
+  it('marks turns without task_complete as aborted and counts the interruption', () => {
+    // fixture turn 2 has no task_complete → aborted; turn 1 completed
+    expect(session.steps[0]!.aborted).toBeUndefined();
+    expect(session.steps[1]!.aborted).toBe(true);
+    expect(session.interactions.interruptions).toBe(1);
+  });
+
+  it('stores full prompt text on steps', () => {
+    expect(session.steps[1]!.promptText).toBe('now the other thing');
+  });
+
+  it('marks subagent rollouts', () => {
+    const lines = fixtureLines();
+    lines[0]!.payload!.thread_source = 'subagent';
+    const sub = normalizeCodexLines(lines, `/x/rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    expect(sub.isSubagent).toBe(true);
+    expect(session.isSubagent).toBeUndefined();
+  });
+
   it('tracks fork lineage and compactions', () => {
     const lines = fixtureLines();
     lines[0]!.payload!.forked_from_id = '019f0000-dead-7000-8000-000000000099';

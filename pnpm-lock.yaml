@@ -47,6 +47,9 @@ importers:
       '@asa/core':
         specifier: workspace:*
         version: link:../core
+      '@asa/prompter':
+        specifier: workspace:*
+        version: link:../prompter
       commander:
         specifier: ^13.0.0
         version: 13.1.0
@@ -58,6 +61,12 @@ importers:
         version: link:../core
 
   packages/core: {}
+
+  packages/prompter:
+    dependencies:
+      '@asa/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 

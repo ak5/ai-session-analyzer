@@ -19,7 +19,13 @@ asa resume --codex-session <id> -p "..."  # headless via `codex exec resume`
 asa fork --claude-session <id>            # whole-session fork (`claude --resume <id> --fork-session`)
 asa fork --codex-session <id>             # wraps `codex fork`
 asa fork --claude-session <id> --at <stepId>   # ← fork at a step (see below)
+
+asa prompter --since 30d                  # analyze the human across recent sessions
+asa prompter --deep                       # + LLM-judge pass (one batched haiku call)
 ```
+
+`asa --help` carries a use-case section; every subcommand documents its flags and
+caveats in `asa <cmd> --help`.
 
 During development: `pnpm asa <args>` or `node packages/cli/bin/asa.js <args>`.
 To get a global `asa`: `pnpm build && cd packages/cli && pnpm link --global`.
@@ -48,12 +54,43 @@ Classic pnpm monorepo:
 | `@asa/claude-sessions` | discovery + parsing + fork-at-step for `~/.claude/projects/**.jsonl` |
 | `@asa/codex-sessions` | discovery + parsing for `~/.codex/sessions/**/rollout-*.jsonl` |
 | `@asa/analyze` | analysis + text rendering over the normalized model |
+| `@asa/prompter` | human-side analysis: prompt features, archetypes, lint, skill curve, LLM judge |
 | `asa` (`packages/cli`) | commander CLI; spawns `claude`/`codex` for resume/fork |
 
 Both parsers are hand-rolled and deliberately tolerant (no published schema exists
 for either format; unknown record types are skipped, corrupt lines ignored). See
 [docs/formats.md](docs/formats.md) for the reverse-engineered format notes, including
 the token-counting gotchas.
+
+## Analyzing the prompter
+
+`asa prompter` flips the lens: instead of what the agent did, it measures how *you*
+drive it, aggregated across recent sessions of both agents.
+
+- **Per-prompt features** (heuristics in `packages/prompter/src/features.ts`):
+  length, specificity 0–10 (paths/code/enumeration add, vagueness subtracts),
+  question vs directive, correction openers ("no, actually…"), vague fillers
+  ("etc", "or something", "idk").
+- **Steering signals** from the transcripts: interruptions (`[Request interrupted…]`
+  markers, Codex turns without `task_complete`), slash commands, queued prompts,
+  permission-mode changes, linked PRs.
+- **Leverage**: agent output tokens per 1,000 chars you typed, and tool calls per step.
+- **Archetype**: rule-based verdict (Micromanager / Cannonballer / Gardener /
+  Delegator / Balanced Operator) with the evidence printed under it.
+- **Lint**: threshold rules with your own prompts as receipts — vague-filler,
+  unanchored-epics, correction-heavy, interrupt-heavy, rapid-fire, night-owl,
+  mega-prompts.
+- **Skill curve**: weekly correction/interruption/specificity trend.
+- **Correlations**: e.g. specificity vs correction-rate across sessions (Pearson,
+  with sample-size caveats printed).
+- **`--deep`**: samples corrected-then-longest prompts and grades them 1–5 on
+  clarity/context via one batched `claude -p` haiku call (`--no-session-persistence`,
+  so judging never pollutes the session store it analyzes). Opt-in because prompt
+  excerpts leave the machine (to your own Anthropic account).
+
+Codex subagent rollouts (machine-written "prompts") are excluded by default —
+`--include-subagents` keeps them. Absolute scores mean little; trends across your
+own prompts are the point.
 
 ## Development
 
