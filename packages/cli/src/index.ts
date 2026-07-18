@@ -260,6 +260,13 @@ Examples:
       }
 
       if (opts.at) {
+        if (opts.dryRun) {
+          console.log(
+            `[dry-run] would fork ${shortId(ref.id)} at step ${shortId(opts.at)}: truncated copy of\n` +
+              `  ${ref.filePath}\n  under a new session id, then \`claude --resume <newId>\``,
+          );
+          return;
+        }
         const fork = await forkClaudeSessionAtStep(ref.filePath, opts.at);
         console.log(
           `Forked ${shortId(ref.id)} at step ${shortId(opts.at)} → session ${fork.newSessionId}` +

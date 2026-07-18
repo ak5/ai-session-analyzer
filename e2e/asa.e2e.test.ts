@@ -151,6 +151,17 @@ describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
     }
   });
 
+  it('fork --at --dry-run writes nothing', async () => {
+    const analyzed = await asa('analyze', '--claude-session', claudeId!, '--json');
+    const stepId = JSON.parse(analyzed.stdout).session.steps[0].id as string;
+    const before = readdirSync(join(claudeHome, 'projects'), { recursive: true }).length;
+    const res = await asa('fork', '--claude-session', claudeId!, '--at', stepId, '--dry-run');
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('[dry-run] would fork');
+    const after = readdirSync(join(claudeHome, 'projects'), { recursive: true }).length;
+    expect(after).toBe(before);
+  });
+
   it('resume --dry-run prints the wrapped claude command', async () => {
     const res = await asa('resume', '--claude-session', claudeId!, '--dry-run');
     expect(res.code).toBe(0);
