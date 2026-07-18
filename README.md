@@ -1,5 +1,7 @@
 # asa — ai session analyzer
 
+[![test](https://github.com/ak5/ai-session-analyzer/actions/workflows/test.yml/badge.svg?branch=dev)](https://github.com/ak5/ai-session-analyzer/actions/workflows/test.yml)
+
 Your AI coding sessions are a dataset. **asa** turns the transcripts that Claude Code
 and Codex CLI already write to disk into something you can **inspect** (tokens, steps,
 tools, cost), **act on** (resume and fork sessions — including forking *mid-conversation*
