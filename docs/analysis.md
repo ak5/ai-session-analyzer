@@ -32,6 +32,19 @@ both agents.
   1–5 via one batched `claude -p` haiku call with `--no-session-persistence`, so
   judging never pollutes the session store it analyzes.
 
+- **Workflow section**: session-level hygiene from the same scope.
+  *Compaction pressure* — sessions that hit `/compact` (or auto-compaction), with
+  auto/manual split and largest pre-compact context; the recommendation is
+  structural: smaller focused sessions (`/clear` between tasks, `asa fork --at`
+  to branch instead of continuing a monolith), since every compaction lossily
+  summarizes history and rebuilds the prompt cache. *Git discipline* — detected
+  from tool calls across both agents' arg shapes: in-session commits, pushes,
+  branch creations, `gh issue`/`gh pr` operations, edit volume, and the branch
+  worked on. Lint rules: compact-heavy, uncommitted-work (10+ edits, zero
+  commits), mainline-editing (heavy edits on main/master without a branch), and
+  untracked-outcomes (long sessions producing no commit, PR, or issue — their
+  decisions live only in the transcript; end them by filing what came up).
+
 **Exclusions:** Codex subagent rollouts carry machine-written "user" prompts and
 are excluded by default (`--include-subagents` keeps them). Sessions created by
 asa's own model calls are always excluded (see the sentinel below).

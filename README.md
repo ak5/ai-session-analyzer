@@ -108,8 +108,11 @@ fork of a heavy session can exceed a smaller model's window (`--model haiku` on 
 Full details for everything below: [docs/analysis.md](docs/analysis.md).
 
 **`asa prompter --since 30d`** — analyze the human. Specificity, corrections,
-interruptions, leverage, a weekly skill curve, an archetype verdict, and lint with
-your own prompts as receipts:
+interruptions, leverage, a weekly skill curve, an archetype verdict, prompt lint
+with your own prompts as receipts — plus **workflow hygiene**: compaction pressure
+(sessions running long enough to lossily summarize themselves → prefer smaller
+sessions or `asa fork --at`) and git discipline (edits without commits, heavy work
+directly on main, long sessions whose outcomes never became a commit/PR/issue):
 
 ```console
 Archetype: The Gardener

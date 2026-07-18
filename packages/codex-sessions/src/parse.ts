@@ -163,6 +163,7 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
       }
       case 'compacted': {
         session.compactions += 1;
+        (session.compactionEvents ??= []).push({ timestamp: line.timestamp });
         break;
       }
       case 'event_msg': {

@@ -123,7 +123,14 @@ export function normalizeClaudeRecords(
     if (record.type === 'ai-title' && typeof record.aiTitle === 'string') {
       session.title = record.aiTitle;
     }
-    if (record.isCompactSummary) session.compactions += 1;
+    if (record.isCompactSummary) {
+      session.compactions += 1;
+      (session.compactionEvents ??= []).push({
+        trigger: record.compactMetadata?.trigger,
+        preTokens: record.compactMetadata?.preTokens,
+        timestamp: record.timestamp,
+      });
+    }
     if (record.type === 'permission-mode') session.interactions.permissionModeChanges += 1;
     if (record.type === 'pr-link') session.interactions.prLinks += 1;
     if (record.type === 'queue-operation' && record.operation === 'enqueue') {

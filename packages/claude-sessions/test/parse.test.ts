@@ -228,6 +228,9 @@ describe('normalizeClaudeRecords — compaction and subagents', () => {
     });
     const session = normalizeClaudeRecords(records, `/x/${SESSION_ID}.jsonl`);
     expect(session.compactions).toBe(1);
+    expect(session.compactionEvents).toEqual([
+      { trigger: 'auto', preTokens: 150000, timestamp: undefined },
+    ]);
     expect(session.steps.map((s) => s.id)).toEqual(['u1', 'u3']);
   });
 
