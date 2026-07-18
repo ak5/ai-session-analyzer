@@ -181,9 +181,9 @@ Classic pnpm monorepo:
 | `@asa/claude-sessions` | discovery, tolerant parsing, fork-at-step, git-trace join for `~/.claude/projects/**.jsonl` |
 | `@asa/codex-sessions` | discovery + tolerant parsing for `~/.codex/sessions/**/rollout-*.jsonl` |
 | `@asa/analyze` | per-session analysis, comparison, text rendering |
-| `@asa/prompter` | human-side analysis: prompt features, archetypes, lint, skill curve, LLM judge |
+| `@asa/prompter` | human-side analysis: prompt features, archetypes, lint, workflow hygiene, skill curve, LLM judge |
 | `@asa/distill` | recurrence mining + `--suggest` recommendations |
-| `@asa/meta` | repo-level: dossier, instruction efficacy, intents |
+| `@asa/meta` | repo-level: dossier, instruction efficacy, intents, model history |
 | `@ak5/asa` (`packages/cli`) | the CLI: agent registry, command surface, spawns `claude`/`codex` |
 
 No published schema exists for either transcript format, so both parsers are

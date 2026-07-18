@@ -50,11 +50,12 @@ both agents.
 Every flag that spends tokens (`prompter --deep`, `distill --suggest`,
 `intents --deep`) is gated: asa builds the exact prompt it would send, prints an
 input-token estimate (chars/4, stated as such) plus an expected-output range, and
-— where a local source exists — current quota: Codex records rate-limit state
+current quota for the chosen backend: Codex records rate-limit state
 (`used_percent`, window, reset) in every rollout's `token_count` events, so asa
-reads the newest rollout's tail; Claude Code exposes nothing locally. Then it
-asks `proceed? [y/N]` on a TTY, or skips the call in non-interactive runs unless
-`--yes` is passed.
+reads the newest rollout's tail; for Claude, asa runs headless
+`claude -p "/usage"` (handled locally by the CLI, no model tokens) and parses the
+session/week percentages. Then it asks `proceed? [y/N]` on a TTY, or skips the
+call in non-interactive runs unless `--yes` is passed.
 
 **Exclusions:** Codex subagent rollouts carry machine-written "user" prompts and
 are excluded by default (`--include-subagents` keeps them). Sessions created by
@@ -72,8 +73,10 @@ Two layers:
    qualification: Bash and Codex `exec` calls are labeled by their leading command
    word (`exec:gh`), parsing Codex's JS-wrapped `{cmd:"…"}` args and apply-patch
    blobs, skipping env-var prefixes and `bash -lc` wrappers; sequences made only
-   of unqualified shell/wait calls are filtered as noise. Existing slash-command
-   usage is reported so already-extracted procedures aren't re-recommended.
+   of unqualified shell/wait calls are filtered as noise. Command usage (Claude
+   `/name`, Codex `$name`) is reported with a kind label — skill (matches the
+   installed skill/command/plugin inventory), builtin, or unknown — so
+   already-extracted procedures aren't re-recommended.
 2. **`--suggest claude|codex`** — ships a trimmed stats digest (short prompt
    previews, counts, session spread — never full transcripts) to a headless model
    run and prints recommendations under a fixed taxonomy: skills to extract,

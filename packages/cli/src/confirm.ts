@@ -1,9 +1,9 @@
 /**
  * Pre-flight gate for every flag that spends model tokens (--deep, --suggest).
  * Shows an input-token estimate from the exact prompt that would be sent
- * (chars/4 — crude but honest and stated), plus current quota usage where a
- * local source exists (Codex records rate limits in its rollouts; Claude Code
- * exposes nothing locally). Requires a TTY yes or an explicit --yes.
+ * (chars/4 — crude but honest and stated), plus current quota usage (Codex:
+ * rate-limit events in the newest rollout; Claude: headless
+ * `claude -p "/usage"`). Requires a TTY yes or an explicit --yes.
  */
 import { createInterface } from 'node:readline/promises';
 import { formatNumber as fmt } from '@asa/core';
