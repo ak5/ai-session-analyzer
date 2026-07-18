@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { previewText, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
-import { analyzeSession, renderComparison, renderReport } from '@asa/analyze';
+import { analyzeSession, compareReports, renderComparison, renderReport } from '@asa/analyze';
 import {
   analyzePrompter,
   collectStepSignals,
@@ -398,7 +398,6 @@ Order: A = first id given (claude ids first), B = second.
     );
     const [a, b] = reports;
     if (opts.json) {
-      const { compareReports } = await import('@asa/analyze');
       console.log(JSON.stringify({ a, b, rows: compareReports(a!, b!) }, null, 2));
     } else {
       console.log(renderComparison(a!, b!));

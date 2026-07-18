@@ -7,7 +7,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && pnpm --filter @ak5/asa bundle",
     "clean": "tsc -b --clean",
     "test": "vitest run",
     "test:e2e": "pnpm build && vitest run -c vitest.e2e.config.ts",

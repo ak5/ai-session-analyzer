@@ -34,8 +34,9 @@ Session selectors: `-c/--claude <id>` and `-o/--codex <id>` (`-o` as in OpenAI).
 `asa --help` carries a use-case section; every subcommand documents its flags and
 caveats in `asa <cmd> --help`.
 
-During development: `pnpm asa <args>` or `node packages/cli/bin/asa.js <args>`.
-To get a global `asa`: `pnpm build && cd packages/cli && pnpm link --global`.
+Once published: `pnpm i -g @ak5/asa`. During development: `pnpm asa <args>`,
+or symlink `packages/cli/bin/asa.js` (self-contained after `pnpm build`) into a
+bin dir on your PATH.
 
 ### Fork at a step
 
@@ -189,6 +190,24 @@ transcripts and copied auth state can never end up in a commit. Fixture generati
 idempotent (`--force` to regenerate); the suite itself never needs auth — real Claude
 session generation forces a fixed session id (`--session-id`), and tests discover
 whatever fixtures exist.
+
+## Publishing
+
+The published artifact is **`@ak5/asa` only** — the CLI, esbuild-bundled
+(`dist/bundle.mjs`, workspace packages + commander inlined, zero runtime deps, MIT).
+The `@asa/*` workspace packages stay private; they're devDependencies of the CLI so
+`pnpm publish` never emits unresolvable `workspace:*` ranges. Verify the exact
+artifact without publishing:
+
+```sh
+pnpm build && cd packages/cli && npm pack        # inspect the tarball
+npm i -g --prefix /tmp/asa-check <tarball> && /tmp/asa-check/bin/asa --version
+```
+
+To actually release (deliberately not automated yet): `npm login` as the owner of
+the `@ak5` scope, then `cd packages/cli && pnpm publish` — `prepublishOnly` runs
+the full build + test suite first, and `publishConfig.access: public` handles the
+scoped-package default.
 
 ## Later / ideas
 
