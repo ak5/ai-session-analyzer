@@ -11,7 +11,7 @@
  * - Prompts leave the machine (to the user's own Anthropic account); that is
  *   why this only runs behind the explicit --deep flag.
  */
-import { execFile } from 'node:child_process';
+import { ASA_INTERNAL_SENTINEL, runModel, type ModelBackend } from '@asa/core';
 import type { StepSignal } from './stats.js';
 
 export interface JudgeSample {
@@ -31,6 +31,7 @@ export interface JudgeGrade {
 }
 
 export interface JudgeResult {
+  backend: ModelBackend;
   model: string;
   samples: number;
   avgClarity?: number;
@@ -39,19 +40,6 @@ export interface JudgeResult {
 }
 
 export type JudgeRunner = (prompt: string, model: string) => Promise<string>;
-
-const defaultRunner: JudgeRunner = (prompt, model) =>
-  new Promise((resolve, reject) => {
-    const child = execFile(
-      'claude',
-      ['-p', '--model', model, '--no-session-persistence', prompt],
-      { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
-      (err, stdout, stderr) =>
-        err ? reject(new Error(stderr.trim() || err.message)) : resolve(stdout),
-    );
-    // never leave a piped stdin dangling for CLIs that wait on it
-    child.stdin?.end();
-  });
 
 /** Corrected-then-longest sampling: failure cases first, then the big briefs. */
 export function selectJudgeSamples(signals: StepSignal[], limit: number): JudgeSample[] {
@@ -76,6 +64,9 @@ export function selectJudgeSamples(signals: StepSignal[], limit: number): JudgeS
 
 export function buildJudgePrompt(samples: JudgeSample[]): string {
   return [
+    // sentinel: with a codex backend the judge call persists a rollout, which
+    // must be excluded from future analysis
+    ASA_INTERNAL_SENTINEL,
     'You are reviewing prompts a developer typed to a coding agent (Claude Code / Codex CLI).',
     'For each prompt, grade:',
     '- clarity (1-5): could a competent stranger act on it without guessing the goal?',
@@ -110,16 +101,20 @@ function parseGrades(stdout: string, sampleIds: Set<string>): JudgeGrade[] {
 
 export async function judgePrompts(
   samples: JudgeSample[],
-  options: { model?: string; runner?: JudgeRunner } = {},
+  options: { backend?: ModelBackend; model?: string; runner?: JudgeRunner } = {},
 ): Promise<JudgeResult> {
-  const model = options.model ?? 'haiku';
-  if (!samples.length) return { model, samples: 0, grades: [] };
-  const runner = options.runner ?? defaultRunner;
-  const stdout = await runner(buildJudgePrompt(samples), model);
+  const backend = options.backend ?? 'claude';
+  const model = options.model ?? (backend === 'claude' ? 'haiku' : 'default');
+  if (!samples.length) return { backend, model, samples: 0, grades: [] };
+  const prompt = buildJudgePrompt(samples);
+  const stdout = options.runner
+    ? await options.runner(prompt, model)
+    : await runModel(backend, prompt, { model: backend === 'claude' ? model : undefined });
   const grades = parseGrades(stdout, new Set(samples.map((s) => s.id)));
   const avg = (xs: number[]) =>
     xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : undefined;
   return {
+    backend,
     model,
     samples: samples.length,
     avgClarity: avg(grades.map((g) => g.clarity)),

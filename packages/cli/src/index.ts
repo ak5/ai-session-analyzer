@@ -150,7 +150,7 @@ Use cases:
 
   Study yourself as a prompter (30 days, both agents)
     $ asa prompter --since 30d --limit 50
-    $ asa prompter --deep                        # + LLM-judge pass via claude -p (haiku)
+    $ asa prompter --deep                        # + LLM-judge pass (claude haiku; --deep codex works too)
 
   Find what to extract into skills, rules, FAQs, automations
     $ asa distill --since 60d                    # deterministic recurrence stats, local only
@@ -340,7 +340,7 @@ program
   .option('-n, --limit <n>', 'max sessions to load (newest first)', '25')
   .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
   .option('--include-subagents', 'keep agent-spawned sessions (their prompts are machine-written)')
-  .option('--deep', 'add an LLM-judge pass: sampled prompts graded via `claude -p` (haiku)')
+  .option('--deep [backend]', 'add an LLM-judge pass: sampled prompts graded via claude (haiku, default) or codex')
   .option('--sample <k>', 'prompts to sample for --deep', '10')
   .option('--yes', 'skip the token-estimate confirmation for --deep')
   .option('--model <model>', 'judge model for --deep', 'haiku')
@@ -366,7 +366,7 @@ Examples:
       limit: string;
       since?: string;
       includeSubagents?: boolean;
-      deep?: boolean;
+      deep?: boolean | string;
       yes?: boolean;
       sample: string;
       model: string;
@@ -378,17 +378,24 @@ Examples:
 
       let judge: JudgeResult | undefined;
       if (opts.deep) {
+        const backend = opts.deep === true ? 'claude' : opts.deep;
+        if (backend !== 'claude' && backend !== 'codex') {
+          throw new Error(`--deep must be claude or codex, got "${backend}"`);
+        }
         const samples = selectJudgeSamples(sessions.flatMap(collectStepSignals), Number(opts.sample));
         const approved = await confirmModelCall({
           label: `--deep judge (${samples.length} sampled prompts)`,
-          backend: 'claude',
+          backend,
           prompt: buildJudgePrompt(samples),
           outputEstimate: [200, 1500],
           yes: opts.yes,
         });
         if (approved) {
           try {
-            judge = await judgePrompts(samples, { model: opts.model });
+            judge = await judgePrompts(samples, {
+              backend,
+              model: backend === 'claude' ? opts.model : undefined,
+            });
           } catch (err) {
             console.error(
               `--deep judge failed (${err instanceof Error ? err.message : err}) — continuing without it`,

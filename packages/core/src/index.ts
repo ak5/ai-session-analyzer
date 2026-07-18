@@ -214,6 +214,57 @@ export function shellVerb(commandText: string): string | undefined {
   return tokens[i]?.split('/').pop();
 }
 
+/**
+ * Prefix stamped on every prompt asa itself sends to an agent (--suggest,
+ * --deep). `codex exec` always persists a rollout, so sessions whose first
+ * prompt carries this sentinel are asa's own and are excluded from analysis —
+ * otherwise asa would eventually analyze itself.
+ */
+export const ASA_INTERNAL_SENTINEL = '[asa-internal]';
+
+export type ModelBackend = 'claude' | 'codex';
+
+/** argv for one headless model call through the user's own agent CLI. */
+export function modelInvocation(
+  backend: ModelBackend,
+  prompt: string,
+  model?: string,
+): { command: string; args: string[] } {
+  if (backend === 'claude') {
+    return {
+      command: 'claude',
+      args: ['-p', '--model', model ?? 'claude-fable-5', '--no-session-persistence', prompt],
+    };
+  }
+  return { command: 'codex', args: ['exec', '--skip-git-repo-check', prompt] };
+}
+
+/** Run any prompt through a headless claude/codex call. */
+export async function runModel(
+  backend: ModelBackend,
+  prompt: string,
+  options: { model?: string; runner?: (command: string, args: string[]) => Promise<string> } = {},
+): Promise<string> {
+  const { command, args } = modelInvocation(backend, prompt, options.model);
+  const runner =
+    options.runner ??
+    (async (cmd: string, cmdArgs: string[]) => {
+      const { execFile } = await import('node:child_process');
+      return new Promise<string>((resolve, reject) => {
+        const child = execFile(
+          cmd,
+          cmdArgs,
+          { timeout: 300_000, maxBuffer: 8 * 1024 * 1024 },
+          (err, stdout, stderr) =>
+            err ? reject(new Error(stderr.trim() || err.message)) : resolve(stdout),
+        );
+        // codex exec blocks forever on a piped-open stdin — close it
+        child.stdin?.end();
+      });
+    });
+  return (await runner(command, args)).trim();
+}
+
 export function formatNumber(n: number): string {
   return n.toLocaleString('en-US');
 }

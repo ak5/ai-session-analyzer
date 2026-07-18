@@ -95,7 +95,7 @@ export function renderPrompterReport(report: PrompterReport, judge?: JudgeResult
   }
 
   if (judge && judge.samples > 0) {
-    out.push('', `LLM judge (${judge.model}, ${judge.samples} sampled prompts):`);
+    out.push('', `LLM judge (${judge.backend} ${judge.model}, ${judge.samples} sampled prompts):`);
     out.push(
       `  clarity ${judge.avgClarity?.toFixed(1) ?? '—'}/5 · context ${judge.avgContext?.toFixed(1) ?? '—'}/5`,
     );

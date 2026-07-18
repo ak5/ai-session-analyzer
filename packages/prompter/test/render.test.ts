@@ -40,13 +40,14 @@ describe('renderPrompterReport', () => {
 
   it('includes the judge section when provided', () => {
     const text = renderPrompterReport(analyzePrompter([session]), {
+      backend: 'claude',
       model: 'haiku',
       samples: 2,
       avgClarity: 4.5,
       avgContext: 3,
       grades: [{ id: 'p1', clarity: 4, context: 3, tip: 'name the file' }],
     });
-    expect(text).toContain('LLM judge (haiku, 2 sampled prompts)');
+    expect(text).toContain('LLM judge (claude haiku, 2 sampled prompts)');
     expect(text).toContain('clarity 4.5/5');
     expect(text).toContain('name the file');
   });
