@@ -56,13 +56,19 @@ total tokens  39,278,156  8,031,034  -31,247,122  -80%
 
 ## Install
 
+From a clone (npm package coming soon):
+
 ```sh
-pnpm i -g @ak5/asa        # once published — or, from a checkout:
-pnpm install && pnpm build && ln -s "$PWD/packages/cli/bin/asa.js" <somewhere-on-PATH>/asa
+git clone https://github.com/ak5/ai-session-analyzer
+cd ai-session-analyzer
+pnpm install && pnpm build
+npm i -g ./packages/cli        # links the bundled CLI globally as `asa`
+asa --version
 ```
 
-Node ≥ 20. Works on the session files alone; the `claude` / `codex` CLIs are only
-needed for `resume`, `fork`, and the opt-in model passes.
+Node ≥ 20, pnpm. The global install is a link to your checkout — `git pull &&
+pnpm build` updates it in place. Works on the session files alone; the `claude` /
+`codex` CLIs are only needed for `resume`, `fork`, and the opt-in model passes.
 
 ## Inspect
 
