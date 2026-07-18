@@ -10,6 +10,13 @@ import {
   type JudgeResult,
 } from '@asa/prompter';
 import {
+  buildDistillStats,
+  isInternalSession,
+  renderDistillStats,
+  runSuggest,
+  type SuggestBackend,
+} from '@asa/distill';
+import {
   AGENT_FILTER_VALUES,
   AGENTS,
   SELECTOR_HINT,
@@ -55,10 +62,10 @@ function parseSince(value: string): Date {
   return parsed;
 }
 
-/** Files above this size are skipped by `prompter` (multi-hundred-MB rollouts exist). */
+/** Files above this size are skipped by `prompter`/`distill` (multi-hundred-MB rollouts exist). */
 const PROMPTER_MAX_FILE_BYTES = 30 * 1024 * 1024;
 
-async function loadSessionsForPrompter(opts: {
+async function loadSessionsInScope(opts: {
   agent: string;
   limit: string;
   since?: string;
@@ -86,11 +93,13 @@ async function loadSessionsForPrompter(opts: {
       console.error(`skipping ${ref.agent} ${ref.id}: ${err instanceof Error ? err.message : err}`);
     }
   }
-  if (opts.includeSubagents) return sessions;
+  // asa's own --suggest/--deep calls persist Codex rollouts — never analyze them
+  const external = sessions.filter((s) => !isInternalSession(s));
+  if (opts.includeSubagents) return external;
   // Subagent rollouts carry machine-written "user" prompts — they'd poison
   // any analysis of the human prompter.
-  const human = sessions.filter((s) => !s.isSubagent);
-  const dropped = sessions.length - human.length;
+  const human = external.filter((s) => !s.isSubagent);
+  const dropped = external.length - human.length;
   if (dropped) console.error(`excluded ${dropped} subagent sessions (use --include-subagents to keep)`);
   return human;
 }
@@ -117,6 +126,10 @@ Use cases:
   Study yourself as a prompter (30 days, both agents)
     $ asa prompter --since 30d --limit 50
     $ asa prompter --deep                        # + LLM-judge pass via claude -p (haiku)
+
+  Find what to extract into skills, rules, FAQs, automations
+    $ asa distill --since 60d                    # deterministic recurrence stats, local only
+    $ asa distill --suggest claude               # + model recommendations (or --suggest codex)
 
   Feed a dashboard or jq pipeline
     $ asa analyze -c <id> --json | jq '.totals'
@@ -325,7 +338,7 @@ Examples:
       model: string;
       json?: boolean;
     }) => {
-      const sessions = await loadSessionsForPrompter(opts);
+      const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
       const report = analyzePrompter(sessions);
 
@@ -345,6 +358,83 @@ Examples:
         console.log(JSON.stringify({ ...report, judge }, null, 2));
       } else {
         console.log(renderPrompterReport(report, judge));
+      }
+    },
+  );
+
+program
+  .command('distill')
+  .description(
+    'Mine recurring behavior across sessions: repeated procedures, questions, corrections, and tool sequences — the raw stats for deciding what to extract into skills, rules, FAQs, and automations.',
+  )
+  .option('--agent <agent>', AGENT_FILTER_VALUES, 'all')
+  .option('-n, --limit <n>', 'max sessions to load (newest first)', '50')
+  .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
+  .option('--include-subagents', 'keep agent-spawned sessions')
+  .option(
+    '--suggest <backend>',
+    'ship the stats to a model (claude | codex) for extraction recommendations',
+  )
+  .option('--model <model>', 'model for --suggest claude (codex uses its configured default)')
+  .option('--prompt-file <path>', 'override the suggest prompt template with a file')
+  .option('--json', 'output the raw stats as JSON')
+  .addHelpText(
+    'after',
+    `
+Notes:
+  Plain \`asa distill\` is fully local and deterministic — clustering is
+  token-overlap based, no embeddings, no API calls. --suggest sends the stats
+  digest (prompt previews included) to your own claude/codex account and prints
+  the model's recommendations: skills to extract, CLAUDE.md rules, automations,
+  docs/dev-faq.md entries, retention gaps, and prompting-vocabulary upgrades.
+  The suggest prompt lives in packages/distill/src/suggest-template.ts — iterate
+  on it there, or point --prompt-file at an alternative.
+  Suggest calls are stamped "[asa-internal]" and such sessions are excluded from
+  all analysis (codex exec has no way to skip writing a rollout).
+
+Examples:
+  $ asa distill --since 60d
+  $ asa distill --json | jq '.questions'
+  $ asa distill --suggest claude
+  $ asa distill --suggest codex --prompt-file my-prompt.md
+`,
+  )
+  .action(
+    async (opts: {
+      agent: string;
+      limit: string;
+      since?: string;
+      includeSubagents?: boolean;
+      suggest?: string;
+      model?: string;
+      promptFile?: string;
+      json?: boolean;
+    }) => {
+      const sessions = await loadSessionsInScope(opts);
+      if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
+      const stats = buildDistillStats(sessions);
+
+      if (opts.json) {
+        console.log(JSON.stringify(stats, null, 2));
+        return;
+      }
+      console.log(renderDistillStats(stats));
+
+      if (opts.suggest) {
+        if (opts.suggest !== 'claude' && opts.suggest !== 'codex') {
+          throw new Error(`--suggest must be claude or codex, got "${opts.suggest}"`);
+        }
+        const template = opts.promptFile
+          ? await (await import('node:fs/promises')).readFile(opts.promptFile, 'utf8')
+          : undefined;
+        console.log(`\n— asking ${opts.suggest} for recommendations…\n`);
+        console.log(
+          await runSuggest(stats, {
+            backend: opts.suggest as SuggestBackend,
+            model: opts.model,
+            template,
+          }),
+        );
       }
     },
   );

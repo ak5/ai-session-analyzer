@@ -22,6 +22,9 @@ asa fork -c <id> --at <stepId>            # ← fork at a step (see below)
 
 asa prompter --since 30d                  # analyze the human across recent sessions
 asa prompter --deep                       # + LLM-judge pass (one batched haiku call)
+
+asa distill --since 60d                   # recurrence stats: what should become a skill/FAQ/rule
+asa distill --suggest claude|codex        # + model recommendations from those stats
 ```
 
 Session selectors: `-c/--claude <id>` and `-o/--codex <id>` (`-o` as in OpenAI).
@@ -56,6 +59,7 @@ Classic pnpm monorepo:
 | `@asa/codex-sessions` | discovery + parsing for `~/.codex/sessions/**/rollout-*.jsonl` |
 | `@asa/analyze` | analysis + text rendering over the normalized model |
 | `@asa/prompter` | human-side analysis: prompt features, archetypes, lint, skill curve, LLM judge |
+| `@asa/distill` | recurrence mining: prompt clusters, tool-sequence n-grams, `--suggest` recommendations |
 | `asa` (`packages/cli`) | commander CLI; spawns `claude`/`codex` for resume/fork |
 
 Both parsers are hand-rolled and deliberately tolerant (no published schema exists
@@ -110,6 +114,26 @@ drive it, aggregated across recent sessions of both agents.
 Codex subagent rollouts (machine-written "prompts") are excluded by default —
 `--include-subagents` keeps them. Absolute scores mean little; trends across your
 own prompts are the point.
+
+## Distilling recurrence into artifacts
+
+`asa distill` answers "what do I keep re-doing, re-asking, and re-teaching by hand?"
+in two layers:
+
+- **Deterministic stats (default)** — fully local, no API calls: cross-session prompt
+  clusters (token-overlap, embedding-free) split into procedures / questions /
+  corrections, recurring tool-call n-grams (`exec:gh → exec:gh` across 11 sessions is
+  a procedure), and existing slash-command usage. Forked transcripts are deduped by
+  step uuid so a fork never fakes a recurrence of its own history.
+- **`--suggest claude|codex`** — ships the stats digest to a model (headless
+  `claude -p` / `codex exec`) and prints recommendations under a fixed taxonomy:
+  skills to extract, CLAUDE.md/AGENTS.md rules, automations (hooks/crons), FAQ
+  entries for `docs/dev-faq.md`, and human-side items (retention gaps worth
+  flashcards, prompting-vocabulary upgrades). The prompt template is the product:
+  it lives in `packages/distill/src/suggest-template.ts` — iterate on it there, or
+  pass `--prompt-file`. Suggest prompts are stamped `[asa-internal]` and such
+  sessions are excluded from all analysis, since `codex exec` always persists a
+  rollout and distill must not distill itself.
 
 ## Development
 

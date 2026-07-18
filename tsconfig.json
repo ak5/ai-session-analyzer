@@ -1,11 +1,26 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/core" },
-    { "path": "packages/claude-sessions" },
-    { "path": "packages/codex-sessions" },
-    { "path": "packages/analyze" },
-    { "path": "packages/prompter" },
-    { "path": "packages/cli" }
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/claude-sessions"
+    },
+    {
+      "path": "packages/codex-sessions"
+    },
+    {
+      "path": "packages/analyze"
+    },
+    {
+      "path": "packages/prompter"
+    },
+    {
+      "path": "packages/distill"
+    },
+    {
+      "path": "packages/cli"
+    }
   ]
 }

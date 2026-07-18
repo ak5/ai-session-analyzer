@@ -13,6 +13,7 @@ export default defineConfig({
       '@asa/codex-sessions': pkg('codex-sessions'),
       '@asa/analyze': pkg('analyze'),
       '@asa/prompter': pkg('prompter'),
+      '@asa/distill': pkg('distill'),
     },
   },
   test: {

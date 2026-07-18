@@ -47,6 +47,9 @@ importers:
       '@asa/core':
         specifier: workspace:*
         version: link:../core
+      '@asa/distill':
+        specifier: workspace:*
+        version: link:../distill
       '@asa/prompter':
         specifier: workspace:*
         version: link:../prompter
@@ -61,6 +64,15 @@ importers:
         version: link:../core
 
   packages/core: {}
+
+  packages/distill:
+    dependencies:
+      '@asa/core':
+        specifier: workspace:*
+        version: link:../core
+      '@asa/prompter':
+        specifier: workspace:*
+        version: link:../prompter
 
   packages/prompter:
     dependencies:

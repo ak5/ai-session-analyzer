@@ -7,12 +7,16 @@
   "bin": {
     "asa": "./bin/asa.js"
   },
-  "files": ["bin", "dist"],
+  "files": [
+    "bin",
+    "dist"
+  ],
   "dependencies": {
     "@asa/analyze": "workspace:*",
     "@asa/claude-sessions": "workspace:*",
     "@asa/codex-sessions": "workspace:*",
     "@asa/core": "workspace:*",
+    "@asa/distill": "workspace:*",
     "@asa/prompter": "workspace:*",
     "commander": "^13.0.0"
   }

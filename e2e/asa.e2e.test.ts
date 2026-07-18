@@ -213,6 +213,32 @@ describe.skipIf(!claudeId && !codexId)(`prompter e2e (${setupHint})`, () => {
   });
 });
 
+describe.skipIf(!claudeId && !codexId)(`distill e2e (${setupHint})`, () => {
+  it('prints deterministic stats with empty-state sections on sparse fixtures', async () => {
+    const res = await asa('distill');
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('Distill — ');
+    expect(res.stdout).toContain('Recurring procedures');
+    expect(res.stdout).toContain('Recurring questions');
+    expect(res.stdout).toContain('Existing slash-command usage');
+  });
+
+  it('emits machine-readable stats with --json', async () => {
+    const res = await asa('distill', '--json');
+    expect(res.code).toBe(0);
+    const stats = JSON.parse(res.stdout);
+    expect(stats.scope.sessions).toBeGreaterThanOrEqual(1);
+    expect(Array.isArray(stats.procedures)).toBe(true);
+    expect(Array.isArray(stats.toolSequences)).toBe(true);
+  });
+
+  it('rejects unknown --suggest backends', async () => {
+    const res = await asa('distill', '--suggest', 'gemini');
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('--suggest must be claude or codex');
+  });
+});
+
 describe.skipIf(!codexId)(`codex e2e ${codexId ?? `(${setupHint})`}`, () => {
   it('lists the fixture session', async () => {
     const res = await asa('list', '--agent', 'codex', '--json');
