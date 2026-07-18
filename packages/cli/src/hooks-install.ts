@@ -89,11 +89,19 @@ function ensureHook(settings: Record<string, unknown>, event: string): boolean {
   return true;
 }
 
-export function installGitTraceHooks(repoPath: string, options: { jj?: boolean } = {}): InstallHooksResult {
+/** Resolve the repo root from any path inside it (like git itself does). */
+export function resolveRepoRoot(fromPath: string): string {
+  if (existsSync(join(fromPath, '.git')) || existsSync(join(fromPath, '.jj'))) return fromPath;
+  const probe = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: fromPath });
+  const root = probe.status === 0 ? probe.stdout.toString().trim() : '';
+  if (!root) throw new Error(`${fromPath} is not inside a git (or jj) repository`);
+  return root;
+}
+
+export function installGitTraceHooks(fromPath: string, options: { jj?: boolean } = {}): InstallHooksResult {
   const actions: string[] = [];
-  if (!existsSync(join(repoPath, '.git')) && !existsSync(join(repoPath, '.jj'))) {
-    throw new Error(`${repoPath} is not a git (or jj) repository`);
-  }
+  const repoPath = resolveRepoRoot(fromPath);
+  if (repoPath !== fromPath) actions.push(`resolved repo root: ${repoPath}`);
 
   const scriptPath = join(repoPath, HOOK_SCRIPT_REL);
   mkdirSync(join(repoPath, TRACE_DIR, 'hooks'), { recursive: true });

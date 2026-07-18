@@ -52,8 +52,18 @@ describe('installGitTraceHooks', () => {
     expect(settings.hooks.Stop).toBeTruthy();
   });
 
+  it('resolves the repo root from a subdirectory', () => {
+    const sub = join(repo, 'deep', 'nested');
+    mkdirSync(sub, { recursive: true });
+    const result = installGitTraceHooks(sub);
+    expect(result.actions[0]).toContain('resolved repo root');
+    // installed at the root, not in the subdir
+    expect(existsSync(join(repo, '.asa/hooks/git-trace.mjs'))).toBe(true);
+    expect(existsSync(join(sub, '.asa'))).toBe(false);
+  });
+
   it('rejects non-repos', () => {
-    expect(() => installGitTraceHooks(tmpdir())).toThrow(/not a git/);
+    expect(() => installGitTraceHooks(tmpdir())).toThrow(/not inside a git/);
   });
 });
 
