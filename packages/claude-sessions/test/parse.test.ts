@@ -6,6 +6,7 @@ import { parseJsonl } from '@asa/core';
 import { forkClaudeSessionAtStep } from '../src/fork.js';
 import { normalizeClaudeRecords, readClaudeSessionCwd } from '../src/parse.js';
 import { annotateStepsWithGitTrace } from '../src/trace.js';
+import { parseClaudeUsageOutput } from '../src/usage.js';
 import type { ClaudeRecord } from '../src/records.js';
 
 const SESSION_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -126,6 +127,12 @@ describe('normalizeClaudeRecords', () => {
     expect(session.id).toBe(SESSION_ID);
     expect(session.cwd).toBe('/tmp/proj');
     expect(session.models).toEqual(['claude-fable-5']);
+  });
+
+  it('attributes api calls and output tokens per model, deduped', () => {
+    expect(session.modelUsage).toEqual({
+      'claude-fable-5': { apiCalls: 2, outputTokens: 60 },
+    });
   });
 });
 
@@ -285,6 +292,25 @@ describe('annotateStepsWithGitTrace', () => {
       { ts: '2026-07-17T11:00:00Z', event: 'UserPromptSubmit', session_id: SESSION_ID, head: 'a'.repeat(40) },
     ]);
     expect(session.steps.every((s) => s.gitHead === undefined)).toBe(true);
+  });
+});
+
+describe('parseClaudeUsageOutput', () => {
+  it('extracts session/week/model percentages from the /usage panel', () => {
+    const quota = parseClaudeUsageOutput(
+      'You are currently using your subscription\n\n' +
+        'Current session: 19% used · resets Jul 18 at 11:39pm\n' +
+        'Current week (all models): 20% used · resets Jul 18\n' +
+        'Current week (Fable): 33% used · resets Jul 18\n',
+    )!;
+    expect(quota.sessionUsedPercent).toBe(19);
+    expect(quota.weekUsedPercent).toBe(20);
+    expect(quota.weekModelUsedPercent).toBe(33);
+    expect(quota.weekModelName).toBe('Fable');
+  });
+
+  it('returns undefined for unrecognizable output', () => {
+    expect(parseClaudeUsageOutput('Not logged in')).toBeUndefined();
   });
 });
 

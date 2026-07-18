@@ -7,6 +7,7 @@
  */
 import { createInterface } from 'node:readline/promises';
 import { formatNumber as fmt } from '@asa/core';
+import { readClaudeQuota } from '@asa/claude-sessions';
 import { readLatestCodexRateLimits } from '@asa/codex-sessions';
 
 export interface ModelCallPlan {
@@ -41,7 +42,19 @@ export async function confirmModelCall(plan: ModelCallPlan): Promise<boolean> {
       console.error('  codex quota: no recent reading found in rollouts');
     }
   } else {
-    console.error('  claude quota: not exposed locally by Claude Code');
+    const quota = await readClaudeQuota();
+    if (quota) {
+      const parts = [
+        quota.sessionUsedPercent !== undefined ? `session ${quota.sessionUsedPercent}%` : undefined,
+        quota.weekUsedPercent !== undefined ? `week ${quota.weekUsedPercent}%` : undefined,
+        quota.weekModelUsedPercent !== undefined
+          ? `week/${quota.weekModelName ?? 'model'} ${quota.weekModelUsedPercent}%`
+          : undefined,
+      ].filter(Boolean);
+      console.error(`  claude quota: ${parts.join(' · ')} used`);
+    } else {
+      console.error('  claude quota: unavailable (claude -p "/usage" failed)');
+    }
   }
 
   if (plan.yes) return true;

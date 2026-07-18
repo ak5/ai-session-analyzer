@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { previewText, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
 import { analyzeSession, compareReports, renderComparison, renderReport } from '@asa/analyze';
-import { listInstalledClaudeCommands } from '@asa/claude-sessions';
+import { listInstalledClaudeCommands, readClaudeStatsCache } from '@asa/claude-sessions';
 import { listInstalledCodexCommands } from '@asa/codex-sessions';
 import {
   analyzePrompter,
@@ -31,6 +31,8 @@ import {
 import {
   buildIntentReport,
   buildIntentThemesPrompt,
+  buildLongRangeHistory,
+  buildModelReport,
   buildProjectDossier,
   computeEfficacy,
   deepenIntentReport,
@@ -38,6 +40,8 @@ import {
   renderDossier,
   renderEfficacy,
   renderIntents,
+  renderLongRangeHistory,
+  renderModelReport,
   steeringSamples,
 } from '@asa/meta';
 import { installGitTraceHooks, resolveRepoRoot } from './hooks-install.js';
@@ -154,6 +158,7 @@ Use cases:
     $ asa efficacy ~/Projects/botyard            # did CLAUDE.md edits reduce corrections?
     $ asa intents --since 30d                    # what you use agents for, per repo
     $ asa intents --deep claude                  # + model-named recurring themes, shipped or not
+    $ asa models --since 60d                    # model favorites, weekly dominance, era switches
 
   Feed a dashboard or jq pipeline
     $ asa analyze -c <id> --json | jq '.totals'
@@ -557,6 +562,32 @@ Examples:
     console.log(`install-hooks in ${target}:`);
     for (const action of actions) console.log(`  · ${action}`);
   });
+
+program
+  .command('models')
+  .description(
+    'Historical model usage: favorites by API-call share, weekly dominant model, and when you switched — per agent, with Codex reasoning effort included',
+  )
+  .option('--agent <agent>', AGENT_FILTER_VALUES, 'all')
+  .option('-n, --limit <n>', 'max sessions to load (newest first)', '100')
+  .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
+  .option('--include-subagents', 'keep agent-spawned sessions')
+  .option('--json', 'output the report as JSON')
+  .action(
+    async (opts: { agent: string; limit: string; since?: string; includeSubagents?: boolean; json?: boolean }) => {
+      const sessions = await loadSessionsInScope(opts);
+      if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
+      const report = buildModelReport(sessions);
+      const cache = await readClaudeStatsCache();
+      const longRange = cache?.dailyModelTokens ? buildLongRangeHistory(cache.dailyModelTokens) : undefined;
+      if (opts.json) {
+        console.log(JSON.stringify({ ...report, longRange }, null, 2));
+      } else {
+        console.log(renderModelReport(report));
+        if (longRange) console.log('\n' + renderLongRangeHistory(longRange));
+      }
+    },
+  );
 
 program
   .command('distill')

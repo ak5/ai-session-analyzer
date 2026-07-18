@@ -151,6 +151,8 @@ export interface NormalizedSession {
   isSubagent?: boolean;
   compactions: number;
   compactionEvents?: CompactionEvent[];
+  /** Per-model attribution: API calls and output tokens by model id (Codex models carry "(effort)"). */
+  modelUsage?: Record<string, { apiCalls: number; outputTokens: number }>;
   steps: Step[];
   usage: UsageTotals;
   subagents: SubagentInfo[];

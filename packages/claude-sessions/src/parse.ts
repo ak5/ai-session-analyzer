@@ -180,6 +180,14 @@ export function normalizeClaudeRecords(
         const delta = usageDelta(message.usage);
         addUsage(currentStep.usage, delta);
         addUsage(session.usage, delta);
+        if (message.model) {
+          const usage = ((session.modelUsage ??= {})[message.model] ??= {
+            apiCalls: 0,
+            outputTokens: 0,
+          });
+          usage.apiCalls += 1;
+          usage.outputTokens += delta.outputTokens;
+        }
       }
       if (message.model) models.add(message.model);
       for (const block of contentBlocks(message)) {

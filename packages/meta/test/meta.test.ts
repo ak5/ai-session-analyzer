@@ -106,6 +106,45 @@ describe('efficacy', () => {
   });
 });
 
+describe('models', () => {
+  it('ranks favorites, builds a weekly timeline, detects switches', async () => {
+    const { buildModelReport, displayModel, renderModelReport } = await import('../src/models.js');
+    const withModel = (id: string, startedAt: string, model: string, calls: number) =>
+      session(id, [step('x', startedAt)], {
+        startedAt,
+        modelUsage: { [model]: { apiCalls: calls, outputTokens: calls * 10 } },
+      });
+    const report = buildModelReport([
+      withModel('a', '2026-07-01T10:00:00Z', 'claude-opus-4-8', 10),
+      withModel('b', '2026-07-02T10:00:00Z', 'claude-opus-4-8', 5),
+      withModel('c', '2026-07-08T10:00:00Z', 'claude-fable-5', 20),
+    ]);
+    expect(report.favorites.claude).toBe('claude-fable-5');
+    expect(report.models[0]).toMatchObject({ model: 'claude-fable-5', share: 20 / 35 });
+    expect(report.weekly.map((w) => w.dominant)).toEqual(['claude-opus-4-8', 'claude-fable-5']);
+    expect(report.switches).toEqual([
+      { week: '2026-07-06', from: 'claude-opus-4-8', to: 'claude-fable-5' },
+    ]);
+    expect(displayModel('claude-haiku-4-5-20251001')).toBe('claude-haiku-4-5');
+    expect(renderModelReport(report)).toContain('Switches');
+  });
+});
+
+describe('long-range model history', () => {
+  it('builds eras and switches from a daily token matrix', async () => {
+    const { buildLongRangeHistory } = await import('../src/models.js');
+    const history = buildLongRangeHistory([
+      { date: '2026-01-05', tokensByModel: { 'claude-opus-4-5-20251101': 100 } },
+      { date: '2026-01-12', tokensByModel: { 'claude-opus-4-6': 200, '<synthetic>': 5 } },
+    ])!;
+    expect(history.days).toBe(2);
+    expect(history.models.map((m) => m.model)).toEqual(['claude-opus-4-6', 'claude-opus-4-5']);
+    expect(history.switches).toEqual([
+      { week: '2026-01-12', from: 'claude-opus-4-5', to: 'claude-opus-4-6' },
+    ]);
+  });
+});
+
 describe('intents', () => {
   it('classifies by keyword rules', () => {
     expect(classifyIntent('fix the failing tests in ci')).toBe('bugfix');
