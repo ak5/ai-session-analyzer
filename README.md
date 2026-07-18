@@ -97,18 +97,20 @@ worktrees, dev-slot clones).
 asa resume -c <id>              # wraps `claude --resume` in the session's original cwd
 asa resume -o <id> -p "..."     # headless via `codex exec resume`
 asa fork -c <id>                # whole-session fork (`--fork-session`) — codex: wraps `codex fork`
-asa fork -c <id> --at <stepId>  # fork AT a step (Claude; see the demo above)
+asa fork -c|-o <id> --at <stepId> # fork AT a step, either agent (see the demo above)
 ```
 
 **Fork at a step** is the feature neither CLI has: `--at` writes a truncated copy of
 the transcript up to that step under a fresh session id, then resumes it. Retry a
 decision point, A/B an approach, or re-enter an expensive session without replaying
-your whole day. Caveat, stated plainly: it relies on Claude Code accepting externally
-written transcripts on `--resume` — works today (verified against v2.1.212, including
-deep forks correctly recalling earlier-step content), but not a stable contract; treat
-step-forks as disposable. Resume a fork with a model whose context window fits it: a
-fork of a heavy session can exceed a smaller model's window (`--model haiku` on a
-200k+ context replies "Prompt is too long").
+your whole day. Works on both agents — Codex forks even carry native
+`forked_from_id` lineage. Caveat, stated plainly: it relies on each CLI accepting
+externally written transcripts on resume — verified live on both (Claude v2.1.212,
+Codex v0.144, including deep forks correctly recalling earlier-step content), but
+neither transcript format is a stable contract; treat step-forks as disposable.
+Resume a fork with a model whose context window fits it: a fork of a heavy session
+can exceed a smaller model's window (`--model haiku` on a 200k+ context replies
+"Prompt is too long").
 
 ## Learn
 
@@ -219,7 +221,7 @@ Bundling rationale, tarball verification, release steps:
 - **Replay**: re-run a session's prompts after changing CLAUDE.md/memory/code, in a
   worktree, with recorded-from-transcript **VCR-style MCP mocks** (the transcript
   already holds every MCP call + result) — scored via `asa compare`
-- Codex fork-at-step and per-turn git tracing (no hook surface upstream yet)
+- Codex per-turn git tracing (no hook surface upstream yet)
 - More agents via the adapter registry (OpenCode, Gemini CLI, Copilot CLI)
 - Cost estimation per model/pricing table
 - Copy Claude `subagents/` transcripts into forks

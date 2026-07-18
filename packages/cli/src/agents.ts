@@ -18,6 +18,7 @@ import {
 } from '@asa/claude-sessions';
 import {
   findCodexSession,
+  forkCodexSessionAtStep,
   listCodexSessions,
   loadCodexSession,
   readCodexSessionCwd,
@@ -80,6 +81,7 @@ const codexAgent: AgentAdapter = {
     args: prompt ? ['exec', 'resume', id, prompt] : ['resume', id],
   }),
   fork: (id, prompt) => ({ command: 'codex', args: prompt ? ['fork', id, prompt] : ['fork', id] }),
+  forkAtStep: forkCodexSessionAtStep,
 };
 
 export const AGENTS: AgentAdapter[] = [claudeAgent, codexAgent];

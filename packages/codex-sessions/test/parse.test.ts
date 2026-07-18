@@ -194,6 +194,29 @@ describe('normalizeCodexLines', () => {
     expect(forked.compactions).toBe(1);
   });
 
+  it('forks at a turn boundary with lineage stamped', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-codex-fork-'));
+    const filePath = join(dir, `rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureLines().map((l) => JSON.stringify(l)).join('\n'));
+
+    const { forkCodexSessionAtStep } = await import('../src/fork.js');
+    const fork = await forkCodexSessionAtStep(filePath, 'turn-abc');
+    // cut lands before turn-def's task_started: meta, turn_context, user_message,
+    // task_started, call, output, token_count, task_complete, user_message #2 = 9
+    expect(fork.keptRecords).toBe(9);
+    expect(fork.droppedRecords).toBe(3);
+
+    const forked = normalizeCodexLines(
+      (await import('@asa/core')).parseJsonl(await (await import('node:fs/promises')).readFile(fork.newFilePath, 'utf8')),
+      fork.newFilePath,
+    );
+    expect(forked.id).toBe(fork.newSessionId);
+    expect(forked.forkedFromId).toBe(SESSION_ID);
+    expect(forked.steps).toHaveLength(1);
+
+    await expect(forkCodexSessionAtStep(filePath, 'nope')).rejects.toThrow(/No turn with step id/);
+  });
+
   it('links tool calls and classifies MCP tools', () => {
     const step1 = session.steps[0]!;
     expect(step1.toolCalls[0]!.name).toBe('exec');
