@@ -1,5 +1,7 @@
 # asa — ai session analyzer
 
+[![test](https://github.com/ak5/ai-session-analyzer/actions/workflows/test.yml/badge.svg?branch=dev)](https://github.com/ak5/ai-session-analyzer/actions/workflows/test.yml)
+
 Your AI coding sessions are a dataset. **asa** turns the transcripts that Claude Code
 and Codex CLI already write to disk into something you can **inspect** (tokens, steps,
 tools, cost), **act on** (resume and fork sessions — including forking *mid-conversation*
@@ -70,6 +72,11 @@ Node ≥ 20, pnpm. The global install is a link to your checkout — `git pull &
 pnpm build` updates it in place. Works on the session files alone; the `claude` /
 `codex` CLIs are only needed for `resume`, `fork`, and the opt-in model passes.
 
+Then run **`asa setup`**: an environment report, then two optional confirmed
+steps — raise Claude's transcript retention globally (`cleanupPeriodDays`,
+default 30 days — the ceiling on every longitudinal feature), and install
+per-prompt git tracing (+ jj colocation) into the current repo.
+
 ## Inspect
 
 ```sh
@@ -108,8 +115,11 @@ fork of a heavy session can exceed a smaller model's window (`--model haiku` on 
 Full details for everything below: [docs/analysis.md](docs/analysis.md).
 
 **`asa prompter --since 30d`** — analyze the human. Specificity, corrections,
-interruptions, leverage, a weekly skill curve, an archetype verdict, and lint with
-your own prompts as receipts:
+interruptions, leverage, a weekly skill curve, an archetype verdict, prompt lint
+with your own prompts as receipts — plus **workflow hygiene**: compaction pressure
+(sessions running long enough to lossily summarize themselves → prefer smaller
+sessions or `asa fork --at`) and git discipline (edits without commits, heavy work
+directly on main, long sessions whose outcomes never became a commit/PR/issue):
 
 ```console
 Archetype: The Gardener
@@ -139,6 +149,22 @@ before vs after every CLAUDE.md/AGENTS.md commit (finally: did that rule *work*?
 and per-repo intent mix, with `--deep` naming recurring themes flagged
 shipped/unshipped via PR links.
 
+**`asa models --since 60d`** — model archaeology. Per-model API calls, share,
+favorites, and a weekly dominant-model timeline with switch detection (Codex
+reasoning effort included) — plus a long-range era history from Claude's
+`stats-cache.json`, whose daily per-model token matrix reaches months beyond
+transcript retention:
+
+```console
+Era changes (weekly dominant by tokens):
+  week of 2026-05-25: claude-opus-4-7 → claude-opus-4-8
+  week of 2026-07-13: claude-opus-4-8 → claude-fable-5
+```
+
+Model-spending flags everywhere (`--deep`, `--suggest`) are gated behind a token
+estimate plus your live quota (Codex: rollout rate-limit events; Claude: headless
+`claude -p "/usage"`) and a `proceed? [y/N]` — `--yes` to skip.
+
 **`asa install-hooks [repo] [--jj]`** — git context per step. Claude Code hooks stamp
 git HEAD + dirty state per prompt into a gitignored trace; `analyze` then shows the
 commit each step ran against. `--jj` snapshots the working copy into
@@ -155,9 +181,9 @@ Classic pnpm monorepo:
 | `@asa/claude-sessions` | discovery, tolerant parsing, fork-at-step, git-trace join for `~/.claude/projects/**.jsonl` |
 | `@asa/codex-sessions` | discovery + tolerant parsing for `~/.codex/sessions/**/rollout-*.jsonl` |
 | `@asa/analyze` | per-session analysis, comparison, text rendering |
-| `@asa/prompter` | human-side analysis: prompt features, archetypes, lint, skill curve, LLM judge |
+| `@asa/prompter` | human-side analysis: prompt features, archetypes, lint, workflow hygiene, skill curve, LLM judge |
 | `@asa/distill` | recurrence mining + `--suggest` recommendations |
-| `@asa/meta` | repo-level: dossier, instruction efficacy, intents |
+| `@asa/meta` | repo-level: dossier, instruction efficacy, intents, model history |
 | `@ak5/asa` (`packages/cli`) | the CLI: agent registry, command surface, spawns `claude`/`codex` |
 
 No published schema exists for either transcript format, so both parsers are

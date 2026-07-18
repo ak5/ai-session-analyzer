@@ -90,6 +90,15 @@ export interface InteractionCounts {
   prLinks: number;
 }
 
+/** One context compaction: the conversation was summarized in place. */
+export interface CompactionEvent {
+  /** "manual" (/compact) or "auto" (context limit); undefined when the format doesn't say (Codex). */
+  trigger?: string;
+  /** Context size in tokens just before compacting (Claude records this). */
+  preTokens?: number;
+  timestamp?: string;
+}
+
 export function emptyInteractionCounts(): InteractionCounts {
   return {
     interruptions: 0,
@@ -141,6 +150,9 @@ export interface NormalizedSession {
   /** Spawned by another agent (Codex thread_source "subagent") — its "user" prompts are machine-written. */
   isSubagent?: boolean;
   compactions: number;
+  compactionEvents?: CompactionEvent[];
+  /** Per-model attribution: API calls and output tokens by model id (Codex models carry "(effort)"). */
+  modelUsage?: Record<string, { apiCalls: number; outputTokens: number }>;
   steps: Step[];
   usage: UsageTotals;
   subagents: SubagentInfo[];
@@ -166,6 +178,40 @@ export function previewText(text: string, max = 64): string {
 
 export function shortId(id: string): string {
   return id.slice(0, 8);
+}
+
+/** Full shell command text of a Bash/exec tool call, across both agents' arg shapes. */
+export function toolCommandText(call: ToolCall): string | undefined {
+  const input = call.input;
+  if (typeof input === 'object' && input !== null) {
+    const c = (input as { command?: unknown }).command;
+    if (typeof c === 'string') return c;
+  }
+  if (typeof input === 'string') {
+    // codex exec args: JS source calling tools.exec_command({cmd:"…"}) or plain JSON
+    const cmdMatch = /["']?cmd["']?\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(input);
+    if (cmdMatch) return cmdMatch[1]!.replace(/\\(.)/g, '$1');
+    try {
+      const parsed = JSON.parse(input) as { command?: unknown; cmd?: unknown };
+      const c = parsed.command ?? parsed.cmd;
+      if (typeof c === 'string') return c;
+      if (Array.isArray(c)) return c.join(' ');
+    } catch {
+      // free-form args
+    }
+  }
+  return undefined;
+}
+
+/** First real command word of a shell string: skips env-var assignments and wrapper shells. */
+export function shellVerb(commandText: string): string | undefined {
+  const tokens = commandText.trim().split(/\s+/);
+  let i = 0;
+  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i]!)) i += 1;
+  if (['bash', 'sh', 'zsh'].includes(tokens[i]?.split('/').pop() ?? '') && /^-l?c$/.test(tokens[i + 1] ?? '')) {
+    return shellVerb(tokens.slice(i + 2).join(' ').replace(/^['"]/, ''));
+  }
+  return tokens[i]?.split('/').pop();
 }
 
 export function formatNumber(n: number): string {
@@ -221,6 +267,29 @@ export async function readFirstJsonlObjects(
     const lines = Buffer.concat(chunks).toString('utf8').split('\n');
     // the final chunk may end mid-line — drop the possibly-truncated tail
     return parseJsonl(lines.slice(0, -1).join('\n')).slice(0, maxRecords);
+  } finally {
+    await handle.close();
+  }
+}
+
+/** Read the last few records of a JSONL file without loading it all (tail counterpart of readFirstJsonlObjects). */
+export async function readLastJsonlObjects(
+  filePath: string,
+  maxRecords = 20,
+  maxBytes = 256 * 1024,
+): Promise<unknown[]> {
+  const { open, stat } = await import('node:fs/promises');
+  const size = (await stat(filePath)).size;
+  const readBytes = Math.min(size, maxBytes);
+  const handle = await open(filePath, 'r');
+  try {
+    const buffer = Buffer.alloc(readBytes);
+    await handle.read(buffer, 0, readBytes, size - readBytes);
+    let text = buffer.toString('utf8');
+    // unless we read the whole file, the first line is probably truncated
+    if (readBytes < size) text = text.slice(text.indexOf('\n') + 1);
+    const records = parseJsonl(text);
+    return records.slice(-maxRecords);
   } finally {
     await handle.close();
   }

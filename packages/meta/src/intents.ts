@@ -93,26 +93,29 @@ interface ThemeResult {
   sessions?: unknown;
 }
 
+export function buildIntentThemesPrompt(report: IntentReport): string {
+  const payload = report.sessions.map((s) => ({
+    id: s.sessionId.slice(0, 8),
+    prompt: s.firstPrompt,
+    heuristicIntent: s.intent,
+  }));
+  return [
+    ASA_INTERNAL_SENTINEL,
+    "These are opening prompts of a developer's AI coding-agent sessions, with a keyword-guessed intent.",
+    'Identify recurring THEMES: clusters of sessions pursuing the same underlying goal (not the same category — the same actual thing).',
+    'Respond with ONLY a JSON array: [{"theme":"short name","sessions":["id",...]}] — at most 8 themes, each with >= 2 sessions. No prose.',
+    '',
+    JSON.stringify(payload),
+  ].join('\n');
+}
+
 /** One batched model call that also refines intents and names cross-session themes. */
 export async function deepenIntentReport(
   report: IntentReport,
   backend: SuggestBackend,
   options: { model?: string; runner?: (command: string, args: string[]) => Promise<string> } = {},
 ): Promise<IntentReport> {
-  const payload = report.sessions.map((s) => ({
-    id: s.sessionId.slice(0, 8),
-    prompt: s.firstPrompt,
-    heuristicIntent: s.intent,
-  }));
-  const prompt = [
-    ASA_INTERNAL_SENTINEL,
-    'These are opening prompts of a developer\'s AI coding-agent sessions, with a keyword-guessed intent.',
-    'Identify recurring THEMES: clusters of sessions pursuing the same underlying goal (not the same category — the same actual thing).',
-    'Respond with ONLY a JSON array: [{"theme":"short name","sessions":["id",...]}] — at most 8 themes, each with >= 2 sessions. No prose.',
-    '',
-    JSON.stringify(payload),
-  ].join('\n');
-  const stdout = await runModel(backend, prompt, options);
+  const stdout = await runModel(backend, buildIntentThemesPrompt(report), options);
   const start = stdout.indexOf('[');
   const end = stdout.lastIndexOf(']');
   if (start < 0 || end <= start) throw new Error(`intent themes: no JSON array in model output`);

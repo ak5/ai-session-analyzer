@@ -80,6 +80,7 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
   const models = new Set<string>();
   const toolCallsById = new Map<string, ToolCall>();
   let currentStep: Step | undefined;
+  let currentModel: string | undefined;
   let lastUserText: string | undefined;
   // Cumulative session usage as of the step boundary — per-step usage is the
   // diff of `total_token_usage` between boundaries (safer than summing
@@ -157,12 +158,14 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
       case 'turn_context': {
         if (typeof payload.model === 'string') {
           const effort = typeof payload.effort === 'string' ? ` (${payload.effort})` : '';
-          models.add(`${payload.model}${effort}`);
+          currentModel = `${payload.model}${effort}`;
+          models.add(currentModel);
         }
         break;
       }
       case 'compacted': {
         session.compactions += 1;
+        (session.compactionEvents ??= []).push({ timestamp: line.timestamp });
         break;
       }
       case 'event_msg': {
@@ -190,6 +193,14 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
             const info = payload.info as CodexTokenCountInfo | undefined;
             if (info?.total_token_usage) cumulative = toUsage(info.total_token_usage);
             if (currentStep) currentStep.apiCalls += 1;
+            if (currentModel) {
+              const usage = ((session.modelUsage ??= {})[currentModel] ??= {
+                apiCalls: 0,
+                outputTokens: 0,
+              });
+              usage.apiCalls += 1;
+              usage.outputTokens += info?.last_token_usage?.output_tokens ?? 0;
+            }
             break;
           }
         }

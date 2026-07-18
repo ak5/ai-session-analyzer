@@ -62,6 +62,7 @@ function fixtureLines(): CodexLine[] {
             reasoning_output_tokens: 5,
             total_tokens: 120,
           },
+          last_token_usage: { output_tokens: 20 },
         },
       },
     },
@@ -99,6 +100,7 @@ function fixtureLines(): CodexLine[] {
             reasoning_output_tokens: 15,
             total_tokens: 350,
           },
+          last_token_usage: { output_tokens: 50 },
         },
       },
     },
@@ -113,6 +115,12 @@ describe('normalizeCodexLines', () => {
     expect(session.cwd).toBe('/tmp/proj');
     expect(session.gitBranch).toBe('main');
     expect(session.models).toEqual(['gpt-5.6-sol (low)']);
+  });
+
+  it('attributes usage to the active model with effort', () => {
+    expect(session.modelUsage).toEqual({
+      'gpt-5.6-sol (low)': { apiCalls: 2, outputTokens: 70 },
+    });
   });
 
   it('uses cumulative totals for session usage', () => {

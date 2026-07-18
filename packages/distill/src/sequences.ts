@@ -2,7 +2,7 @@
  * Recurring tool-call sequence mining: the same n-gram of tool invocations
  * across many sessions is a procedure being re-performed by hand — skill bait.
  */
-import type { NormalizedSession, ToolCall } from '@asa/core';
+import { shellVerb, toolCommandText, type NormalizedSession, type ToolCall } from '@asa/core';
 
 export interface SequenceStat {
   sequence: string[];
@@ -10,45 +10,15 @@ export interface SequenceStat {
   sessions: string[];
 }
 
-/** First real command word of a shell string: skips env-var assignments and wrapper shells. */
-function shellVerb(commandText: string): string | undefined {
-  const tokens = commandText.trim().split(/\s+/);
-  let i = 0;
-  while (i < tokens.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[i]!)) i += 1;
-  if (['bash', 'sh', 'zsh'].includes(tokens[i]?.split('/').pop() ?? '') && /^-l?c$/.test(tokens[i + 1] ?? '')) {
-    return shellVerb(tokens.slice(i + 2).join(' ').replace(/^['"]/, ''));
-  }
-  return tokens[i]?.split('/').pop();
-}
-
 /**
  * Bash/exec calls are opaque by name — qualify them with the leading command
- * word. Codex `exec` args are JavaScript source invoking
- * `tools.exec_command({"cmd":"…"})` (or an apply-patch blob), not plain JSON.
+ * word (extraction handles both agents' arg shapes, see core's toolCommandText).
  */
 export function toolLabel(call: ToolCall): string {
-  const input = call.input;
-  let commandText: string | undefined;
-  if (call.name === 'Bash' && typeof input === 'object' && input !== null) {
-    const c = (input as { command?: unknown }).command;
-    if (typeof c === 'string') commandText = c;
-  } else if (typeof input === 'string') {
-    if (input.includes('*** Begin Patch')) return `${call.name}:apply_patch`;
-    // cmd key may be JSON ("cmd":) or a JS object-literal key (cmd:)
-    const cmdMatch = /["']?cmd["']?\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(input);
-    if (cmdMatch) {
-      commandText = cmdMatch[1]!.replace(/\\(.)/g, '$1');
-    } else {
-      try {
-        const parsed = JSON.parse(input) as { command?: unknown; cmd?: unknown };
-        const c = parsed.command ?? parsed.cmd;
-        if (typeof c === 'string') commandText = c;
-        else if (Array.isArray(c)) commandText = c.join(' ');
-      } catch {
-        // free-form JS/args without a cmd — fall through to the bare name
-      }
-    }
+  if (typeof call.input === 'string' && call.input.includes('*** Begin Patch')) {
+    return `${call.name}:apply_patch`;
   }
+  const commandText = toolCommandText(call);
   if (commandText) {
     const word = shellVerb(commandText);
     if (word) return `${call.name}:${word}`;

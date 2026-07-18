@@ -1,5 +1,6 @@
 import { previewText, type AgentKind, type NormalizedSession } from '@asa/core';
 import { extractPromptFeatures, type PromptFeatures } from './features.js';
+import { buildWorkflowReport, type WorkflowReport } from './workflow.js';
 
 /** One prompt-bearing step, flattened for aggregation. */
 export interface StepSignal {
@@ -92,6 +93,7 @@ export interface PrompterReport {
   sessions: SessionPrompterStats[];
   archetype: Archetype;
   lints: LintFinding[];
+  workflow: WorkflowReport;
   skillCurve: WeekBucket[];
   correlations: {
     sampleSize: number;
@@ -415,6 +417,7 @@ export function analyzePrompter(sessions: NormalizedSession[]): PrompterReport {
     sessions: stats,
     archetype: pickArchetype(totals, subagentsPerSession),
     lints: lint(totals, allSignals),
+    workflow: buildWorkflowReport(sessions),
     skillCurve: skillCurve(allSignals),
     correlations: {
       sampleSize: withSpec.length,

@@ -11,7 +11,7 @@
  * Requires a build first (`pnpm test:e2e` handles that).
  */
 import { execFile } from 'node:child_process';
-import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -230,6 +230,33 @@ describe.skipIf(!claudeId || !codexId)(`compare e2e (${setupHint})`, () => {
   });
 });
 
+describe('setup e2e', () => {
+  it('reports the environment and applies retention only with --yes', async () => {
+    // reset: prior suite runs may have set retention in the sandbox home
+    const settingsPath = join(claudeHome, 'settings.json');
+    if (existsSync(settingsPath)) {
+      const settings = JSON.parse(readFileSync(settingsPath, 'utf8')) as Record<string, unknown>;
+      delete settings.cleanupPeriodDays;
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(settingsPath, JSON.stringify(settings));
+    }
+    const report = await asa('setup');
+    expect(report.code).toBe(0);
+    expect(report.stdout).toContain('transcript retention');
+    expect(report.stdout).toContain('Left unchanged');
+
+    const applied = await asa('setup', '--yes', '--retention-days', '180');
+    expect(applied.stdout).toContain('Set cleanupPeriodDays = 180');
+    const settings = JSON.parse(
+      readFileSync(join(claudeHome, 'settings.json'), 'utf8'),
+    ) as { cleanupPeriodDays?: number };
+    expect(settings.cleanupPeriodDays).toBe(180);
+
+    const again = await asa('setup', '--retention-days', '180');
+    expect(again.stdout).toContain('nothing to change');
+  });
+});
+
 describe('install-hooks e2e', () => {
   it('installs trace hooks into a fresh git repo', async () => {
     const { mkdtempSync } = await import('node:fs');
@@ -261,6 +288,15 @@ describe.skipIf(!claudeId && !codexId)(`distill e2e (${setupHint})`, () => {
     expect(stats.scope.sessions).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(stats.procedures)).toBe(true);
     expect(Array.isArray(stats.toolSequences)).toBe(true);
+  });
+
+  it('gates --suggest behind a token estimate and skips without --yes in non-TTY', async () => {
+    const res = await asa('distill', '--suggest', 'claude');
+    expect(res.code).toBe(0);
+    expect(res.stderr).toContain('input tokens (est. chars/4)');
+    expect(res.stderr).toContain('pass --yes to proceed');
+    // the model call must not have happened
+    expect(res.stdout).not.toContain('asking claude');
   });
 
   it('rejects unknown --suggest backends', async () => {

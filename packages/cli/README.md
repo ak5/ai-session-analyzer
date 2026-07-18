@@ -19,7 +19,12 @@ asa fork    -c <id> [--at <stepId>]   # whole-session fork, or fork AT a step (r
 asa compare -c <a> -c <b>         # metric deltas between two sessions (or -c vs -o cross-agent)
 asa prompter --since 30d [--deep] # profile the human: specificity, corrections, archetype, lint
 asa distill --since 60d [--suggest claude|codex]   # what to extract into skills, rules, FAQs, crons
+asa project [path]                # repo dossier: sessions, spend, steering, instruction surfaces
+asa efficacy [path]               # steering metrics before/after each CLAUDE.md/AGENTS.md commit
+asa intents [--deep claude|codex] # session intent mix per repo; recurring themes shipped/unshipped
+asa models --since 60d            # model favorites, weekly dominance, long-range era switches
 asa install-hooks [repo] [--jj]   # per-prompt git tracing (+ jj op-log snapshots of AI edits)
+asa setup                         # onboarding: environment report + optional retention/hooks steps
 ```
 
 Session ids accept unique prefixes. `-c/--claude`, `-o/--codex` (as in OpenAI).

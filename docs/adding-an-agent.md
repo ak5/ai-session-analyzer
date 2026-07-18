@@ -2,7 +2,7 @@
 
 Every asa command is a loop over an agent registry. Supporting a new agent is
 three contained steps — `list`, `analyze`, `resume`, `fork`, `compare`,
-`prompter`, `distill`, `project`, `efficacy`, and `intents` all pick it up
+`prompter`, `distill`, `project`, `efficacy`, `intents`, and `models` all pick it up
 automatically.
 
 ## 1. A sessions package

@@ -74,7 +74,7 @@ export function selectJudgeSamples(signals: StepSignal[], limit: number): JudgeS
   }));
 }
 
-function buildJudgePrompt(samples: JudgeSample[]): string {
+export function buildJudgePrompt(samples: JudgeSample[]): string {
   return [
     'You are reviewing prompts a developer typed to a coding agent (Claude Code / Codex CLI).',
     'For each prompt, grade:',

@@ -51,6 +51,19 @@ export function renderPrompterReport(report: PrompterReport, judge?: JudgeResult
     for (const ex of finding.examples) out.push(`      e.g. ${ex}`);
   }
 
+  const w = report.workflow;
+  out.push('', 'Workflow:');
+  out.push(
+    `  compactions: ${w.totals.sessionsWithCompactions}/${report.sessions.length} sessions (${w.totals.compactions} total` +
+      `${w.totals.autoShare !== undefined ? `, ${pct(w.totals.autoShare)} auto` : ''})` +
+      ` · committing in-session: ${w.totals.sessionsCommitting}` +
+      ` · heavy edits w/o commit: ${w.totals.sessionsEditingWithoutCommit}`,
+  );
+  for (const finding of w.lints) {
+    out.push(`  [${finding.severity}] ${finding.rule}: ${finding.message}`);
+    for (const ex of finding.examples) out.push(`      e.g. ${ex}`);
+  }
+
   const c = report.correlations;
   out.push('', `Correlations (n=${c.sampleSize} sessions — treat |r| < 0.3 or small n as noise):`);
   out.push(
