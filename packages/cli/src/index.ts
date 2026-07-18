@@ -1,6 +1,8 @@
 import { Command } from 'commander';
 import { previewText, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
 import { analyzeSession, compareReports, renderComparison, renderReport } from '@asa/analyze';
+import { listInstalledClaudeCommands } from '@asa/claude-sessions';
+import { listInstalledCodexCommands } from '@asa/codex-sessions';
 import {
   analyzePrompter,
   collectStepSignals,
@@ -580,7 +582,14 @@ Examples:
     }) => {
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
-      const stats = buildDistillStats(sessions);
+      const projectDirs = [...new Set(sessions.map((s) => s.cwd).filter((c): c is string => !!c))];
+      const [claudeSkills, codexSkills] = await Promise.all([
+        listInstalledClaudeCommands({ projectDirs }),
+        listInstalledCodexCommands(),
+      ]);
+      const stats = buildDistillStats(sessions, {
+        knownSkills: new Set([...claudeSkills, ...codexSkills]),
+      });
 
       if (opts.json) {
         console.log(JSON.stringify(stats, null, 2));

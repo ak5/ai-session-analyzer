@@ -47,12 +47,12 @@ export function renderDistillStats(stats: DistillStats): string {
       : '  none found',
   );
 
-  out.push('', 'Existing slash-command usage (already extracted):');
+  out.push('', 'Command usage (skill = your extracted procedures; builtin = CLI-provided):');
   out.push(
     stats.commandUsage.length
       ? table(
-          ['command', '×', 'sessions'],
-          stats.commandUsage.map((c) => [c.command, String(c.count), String(c.sessions)]),
+          ['command', 'kind', '×', 'sessions'],
+          stats.commandUsage.map((c) => [c.command, c.kind, String(c.count), String(c.sessions)]),
         )
       : '  none used in scope',
   );

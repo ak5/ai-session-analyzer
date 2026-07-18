@@ -251,7 +251,7 @@ describe.skipIf(!claudeId && !codexId)(`distill e2e (${setupHint})`, () => {
     expect(res.stdout).toContain('Distill — ');
     expect(res.stdout).toContain('Recurring procedures');
     expect(res.stdout).toContain('Recurring questions');
-    expect(res.stdout).toContain('Existing slash-command usage');
+    expect(res.stdout).toContain('Command usage');
   });
 
   it('emits machine-readable stats with --json', async () => {

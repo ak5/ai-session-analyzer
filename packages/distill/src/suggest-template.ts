@@ -18,5 +18,5 @@ Recurrence across sessions is the signal: something is being re-done, re-asked, 
 Rules:
 - Be selective. Fewer, higher-confidence recommendations beat coverage. Skip any section with no real evidence.
 - Every recommendation cites its evidence: the cluster/sequence it comes from, with count and session spread.
-- Do not recommend extracting what their slash-command usage shows already exists — but DO flag "skill bypass" if a recurring prompt duplicates an existing command.
+- Do not recommend extracting what already exists: command usage entries with kind "skill" are their extracted procedures (Claude /name, Codex $name); kind "builtin" are CLI features. DO flag "skill bypass" if a recurring free-text prompt duplicates an existing kind-"skill" command.
 - Output plain markdown with exactly the five numbered section headers above (omit empty ones). No preamble.`;

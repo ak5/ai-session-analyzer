@@ -17,6 +17,13 @@ export function isInternalSession(session: NormalizedSession): boolean {
 
 export interface CommandUsage {
   command: string;
+  /**
+   * 'skill' = matches an installed user skill/command/plugin.
+   * 'builtin' = /-prefixed and not installed — plausibly CLI-provided.
+   * 'unknown' = $-prefixed and not installed — Codex has no $ builtins, so
+   * this is a removed/renamed skill.
+   */
+  kind: 'skill' | 'builtin' | 'unknown';
   count: number;
   sessions: number;
 }
@@ -40,7 +47,15 @@ export interface DistillStats {
   commandUsage: CommandUsage[];
 }
 
-export function buildDistillStats(allSessions: NormalizedSession[]): DistillStats {
+export interface DistillOptions {
+  /** Installed skill/command names (no / or $ prefix) — see listInstalledClaudeCommands / listInstalledCodexCommands. */
+  knownSkills?: Set<string>;
+}
+
+export function buildDistillStats(
+  allSessions: NormalizedSession[],
+  options: DistillOptions = {},
+): DistillStats {
   const sessions = allSessions.filter((s) => !isInternalSession(s));
   // Forked transcripts are prefix copies that keep the original step uuids —
   // without dedupe every fork would fake a recurrence of its own history.
@@ -82,7 +97,17 @@ export function buildDistillStats(allSessions: NormalizedSession[]): DistillStat
     lessons: clusters.filter((c) => c.kind === 'correction'),
     toolSequences: mineToolSequences(sessions),
     commandUsage: [...commandCounts.entries()]
-      .map(([command, s]) => ({ command, count: s.count, sessions: s.sessions.size }))
+      .map(([command, s]): CommandUsage => {
+        const bare = command.replace(/^[/$]/, '');
+        const known =
+          options.knownSkills?.has(bare) || options.knownSkills?.has(bare.split(':')[0] ?? bare);
+        return {
+          command,
+          kind: known ? 'skill' : command.startsWith('$') ? 'unknown' : 'builtin',
+          count: s.count,
+          sessions: s.sessions.size,
+        };
+      })
       .sort((a, b) => b.count - a.count),
   };
 }

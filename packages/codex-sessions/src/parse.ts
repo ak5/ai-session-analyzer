@@ -99,13 +99,27 @@ export function normalizeCodexLines(lines: CodexLine[], filePath: string): Norma
   const openStep = (id: string, timestamp?: string): Step => {
     closeStep();
     stepStart = { ...cumulative };
+    // Codex skills are invoked as $-prefixed messages ("$session-closeout …") —
+    // command steps, not free-text prompts
+    let kind: Step['kind'] = 'prompt';
+    let commandName: string | undefined;
+    let text = lastUserText;
+    const command = text?.match(/^\$[\w:.-]+/);
+    if (command) {
+      kind = 'command';
+      commandName = command[0];
+      text = text!.slice(command[0].length).trim() || undefined;
+      session.interactions.commands += 1;
+    }
+    lastUserText = undefined; // consume: a turn without fresh input must not inherit it
     const step: Step = {
       id,
       index: session.steps.length,
-      kind: 'prompt',
+      kind,
+      commandName,
       timestamp,
-      promptText: lastUserText,
-      promptPreview: lastUserText !== undefined ? previewText(lastUserText) : undefined,
+      promptText: text,
+      promptPreview: text !== undefined ? previewText(text) : undefined,
       apiCalls: 0,
       toolCalls: [],
       usage: emptyUsage(),

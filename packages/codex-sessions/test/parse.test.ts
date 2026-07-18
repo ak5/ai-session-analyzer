@@ -145,6 +145,30 @@ describe('normalizeCodexLines', () => {
     expect(await readCodexSessionCwd(filePath)).toBe('/tmp/proj');
   });
 
+  it('treats $-prefixed messages as command steps, not prompts', () => {
+    const lines = fixtureLines();
+    lines.push(
+      { timestamp: '2026-07-17T10:02:00Z', type: 'event_msg',
+        payload: { type: 'user_message', message: '$session-closeout wrap it up' } },
+      { timestamp: '2026-07-17T10:02:01Z', type: 'event_msg',
+        payload: { type: 'task_started', turn_id: 'turn-cmd' } },
+    );
+    const s = normalizeCodexLines(lines, `/x/rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    const commandStep = s.steps.at(-1)!;
+    expect(commandStep.kind).toBe('command');
+    expect(commandStep.commandName).toBe('$session-closeout');
+    expect(commandStep.promptText).toBe('wrap it up');
+    expect(s.interactions.commands).toBe(1);
+  });
+
+  it('does not leak a consumed user message into the next turn', () => {
+    const lines = fixtureLines();
+    lines.push({ timestamp: '2026-07-17T10:02:00Z', type: 'event_msg',
+      payload: { type: 'task_started', turn_id: 'turn-3' } });
+    const s = normalizeCodexLines(lines, `/x/rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    expect(s.steps.at(-1)!.promptText).toBeUndefined();
+  });
+
   it('marks subagent rollouts', () => {
     const lines = fixtureLines();
     lines[0]!.payload!.thread_source = 'subagent';

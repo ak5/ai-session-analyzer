@@ -102,6 +102,33 @@ describe('buildDistillStats', () => {
     const stats = buildDistillStats(sessions);
     expect(stats.scope.sessions).toBe(2);
     expect(stats.procedures).toHaveLength(1);
-    expect(stats.commandUsage).toEqual([{ command: '/verify', count: 2, sessions: 2 }]);
+    expect(stats.commandUsage).toEqual([
+      { command: '/verify', kind: 'builtin', count: 2, sessions: 2 },
+    ]);
+  });
+
+  it('classifies commands as skills when the inventory knows them', () => {
+    const sessions = [
+      session('s1', [
+        step('/verify', [], 'command'),
+        step('/clear', [], 'command'),
+        step('/slack:standup', [], 'command'),
+      ]),
+      session('s2', [
+        step('$session-closeout', [], 'command'),
+        step('$gone-skill', [], 'command'),
+      ]),
+    ];
+    const stats = buildDistillStats(sessions, {
+      knownSkills: new Set(['verify', 'session-closeout', 'slack']),
+    });
+    const byName = Object.fromEntries(stats.commandUsage.map((c) => [c.command, c.kind]));
+    expect(byName).toEqual({
+      '/verify': 'skill',
+      '/clear': 'builtin',
+      '/slack:standup': 'skill',
+      '$session-closeout': 'skill',
+      '$gone-skill': 'unknown',
+    });
   });
 });

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { findClaudeSession, listClaudeSessions } from '../src/discover.js';
+import { listInstalledClaudeCommands } from '../src/paths.js';
 
 const A = 'aaaaaaaa-0000-4000-8000-000000000001';
 const B = 'bbbbbbbb-0000-4000-8000-000000000002';
@@ -34,6 +35,24 @@ describe('listClaudeSessions', () => {
 
   it('returns [] for a missing root', async () => {
     expect(await listClaudeSessions({ projectsDir: '/nonexistent/xyz' })).toEqual([]);
+  });
+});
+
+describe('listInstalledClaudeCommands', () => {
+  it('collects skill dirs and command .md names from config and project roots', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'asa-claude-cfg-'));
+    const project = await mkdtemp(join(tmpdir(), 'asa-claude-proj-'));
+    await mkdir(join(configDir, 'skills', 'boiltheocean'), { recursive: true });
+    await mkdir(join(configDir, 'commands'), { recursive: true });
+    await writeFile(join(configDir, 'commands', 'undo.md'), '# undo');
+    await mkdir(join(project, '.claude', 'skills', 'deploy'), { recursive: true });
+    const names = await listInstalledClaudeCommands({ configDir, projectDirs: [project] });
+    expect(names).toEqual(new Set(['boiltheocean', 'undo', 'deploy']));
+  });
+
+  it('returns empty set when nothing is installed', async () => {
+    const configDir = await mkdtemp(join(tmpdir(), 'asa-claude-empty-'));
+    expect(await listInstalledClaudeCommands({ configDir })).toEqual(new Set());
   });
 });
 
