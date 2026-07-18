@@ -88,6 +88,9 @@ asa analyze -o <id> --json      # -c/--claude, -o/--codex (as in OpenAI); ids ac
 asa compare -c <a> -c <b>       # metric deltas — original vs fork, or -c vs -o cross-agent
 ```
 
+Every report command also takes `--json` (machine-readable) and `--html [file]`
+(a styled, self-contained page — dark/light aware, shareable).
+
 `asa list` groups by each session's real cwd (read from the file headers) and ends
 with an **Orphans** section — sessions whose directory no longer exists (deleted
 worktrees, dev-slot clones).

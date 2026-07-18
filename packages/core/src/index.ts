@@ -346,6 +346,61 @@ export async function readLastJsonlObjects(
   }
 }
 
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+/**
+ * Wrap a text report as a self-contained HTML page: monospace layout (the
+ * reports are column-aligned), light/dark via prefers-color-scheme, and a
+ * few regex highlights ([warn]/[info] lints, table rules, section headers).
+ * Deliberately a styled mirror of the terminal output, not a separate UI.
+ */
+export function renderHtmlReport(options: {
+  title: string;
+  command: string;
+  body: string;
+  generatedAt?: string;
+}): string {
+  const body = escapeHtml(options.body)
+    .replace(/^(\[warn\].*)$/gm, '<span class="warn">$1</span>')
+    .replace(/^(\s*\[warn\].*)$/gm, '<span class="warn">$1</span>')
+    .replace(/^(\s*\[info\].*)$/gm, '<span class="info">$1</span>')
+    .replace(/^([A-Z][^\n]{0,60}:)$/gm, '<span class="head">$1</span>')
+    .replace(/^(-{2,}[\s-]*)$/gm, '<span class="rule">$1</span>');
+  const generated = options.generatedAt ?? new Date().toISOString();
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(options.title)}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 2rem auto; max-width: 110ch; padding: 0 1rem;
+         background: Canvas; color: CanvasText;
+         font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  header { margin-bottom: 1.5rem; }
+  h1 { font-size: 1.1rem; margin: 0 0 .25rem; }
+  .meta { opacity: .6; font-size: .85em; }
+  pre { white-space: pre; overflow-x: auto; }
+  .warn { color: light-dark(#b45309, #fbbf24); font-weight: 600; }
+  .info { color: light-dark(#1d4ed8, #93c5fd); }
+  .head { font-weight: 700; }
+  .rule { opacity: .4; }
+</style>
+</head>
+<body>
+<header>
+<h1>${escapeHtml(options.title)}</h1>
+<div class="meta">asa ${escapeHtml(options.command)} · generated ${escapeHtml(generated)}</div>
+</header>
+<pre>${body}</pre>
+</body>
+</html>
+`;
+}
+
 /** Parse a JSONL buffer tolerantly: unparseable lines are skipped. */
 export function parseJsonl<T = unknown>(text: string): T[] {
   const out: T[] = [];

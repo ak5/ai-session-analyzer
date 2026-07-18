@@ -62,6 +62,23 @@ describe('readFirstJsonlObjects', () => {
   });
 });
 
+describe('renderHtmlReport', () => {
+  it('escapes content and highlights lint lines', async () => {
+    const { renderHtmlReport } = await import('../src/index.js');
+    const html = renderHtmlReport({
+      title: 'x <script>',
+      command: 'analyze',
+      body: 'Lint:\n  [warn] vague-filler: too <vague>\n  [info] night-owl: late',
+      generatedAt: '2026-07-19T00:00:00Z',
+    });
+    expect(html).toContain('&lt;script&gt;');
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('<span class="warn">');
+    expect(html).toContain('<span class="info">');
+    expect(html).toContain('too &lt;vague&gt;');
+  });
+});
+
 describe('shortId', () => {
   it('keeps the first 8 chars', () => {
     expect(shortId('019f6fe1-5809-73f1-a4e3-478b31e04834')).toBe('019f6fe1');

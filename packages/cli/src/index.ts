@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { previewText, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
+import { previewText, renderHtmlReport, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
 import { analyzeSession, compareReports, renderComparison, renderReport } from '@asa/analyze';
 import {
   listInstalledClaudeCommands,
@@ -170,8 +170,9 @@ Use cases:
     $ asa intents --deep claude                  # + model-named recurring themes, shipped or not
     $ asa models --since 60d                    # model favorites, weekly dominance, era switches
 
-  Feed a dashboard or jq pipeline
+  Feed a dashboard, browser, or jq pipeline
     $ asa analyze -c <id> --json | jq '.totals'
+    $ asa prompter --html && open asa-prompter.html   # any report: --html [file]
     $ asa prompter --json | jq '.skillCurve'
 `;
 
@@ -246,10 +247,11 @@ addSelectorOptions(
     .description('Analyze a session: tokens, steps, tool calls, MCP usage, subagents'),
 )
   .option('--json', 'output the full report as JSON')
-  .action(async (opts: SelectorOpts & { json?: boolean }) => {
+  .option('--html [file]', 'write the report as a styled HTML page')
+  .action(async (opts: SelectorOpts & { json?: boolean; html?: boolean | string }) => {
     const { adapter, ref } = await resolveSession(opts);
     const report = analyzeSession(await adapter.load(ref.filePath));
-    console.log(opts.json ? JSON.stringify(report, null, 2) : renderReport(report));
+    await deliver('analyze', `session ${shortId(report.session.id)} — ${report.session.title ?? report.session.agent}`, renderReport(report), report, opts);
   });
 
 addSelectorOptions(
@@ -352,6 +354,7 @@ program
   .option('--yes', 'skip the token-estimate confirmation for --deep')
   .option('--model <model>', 'judge model for --deep', 'haiku')
   .option('--json', 'output the full report as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .addHelpText(
     'after',
     `
@@ -378,6 +381,7 @@ Examples:
       sample: string;
       model: string;
       json?: boolean;
+      html?: boolean | string;
     }) => {
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
@@ -411,15 +415,33 @@ Examples:
         }
       }
 
-      if (opts.json) {
-        console.log(JSON.stringify({ ...report, judge }, null, 2));
-      } else {
-        console.log(renderPrompterReport(report, judge));
-      }
+      await deliver('prompter', 'prompter report', renderPrompterReport(report, judge), { ...report, judge }, opts);
     },
   );
 
 const collect = (value: string, previous: string[] = []) => [...previous, value];
+
+/** Shared output tail for report commands: --json, --html [file], or text. */
+async function deliver(
+  command: string,
+  title: string,
+  text: string,
+  json: unknown,
+  opts: { json?: boolean; html?: boolean | string },
+): Promise<void> {
+  if (opts.json) {
+    console.log(JSON.stringify(json, null, 2));
+    return;
+  }
+  if (opts.html) {
+    const { writeFile } = await import('node:fs/promises');
+    const file = typeof opts.html === 'string' ? opts.html : `asa-${command}.html`;
+    await writeFile(file, renderHtmlReport({ title, command, body: text }));
+    console.log(`wrote ${file}`);
+    return;
+  }
+  console.log(text);
+}
 
 /** distill --faq: recurring questions in one repo's sessions + answers re-read from the transcripts. */
 async function writeFaq(repoRoot: string, limit: number): Promise<void> {
@@ -486,7 +508,8 @@ program
   )
   .option('-n, --limit <n>', 'max sessions to scan (newest first)', '200')
   .option('--json', 'output the dossier as JSON')
-  .action(async (path: string | undefined, opts: { limit: string; json?: boolean }) => {
+  .option('--html [file]', 'write the dossier as a styled HTML page')
+  .action(async (path: string | undefined, opts: { limit: string; json?: boolean; html?: boolean | string }) => {
     const repoRoot = resolveRepoRoot(path ?? process.cwd());
     const sessions = await loadSessionsForRepo(repoRoot, Number(opts.limit));
     if (!sessions.length) throw new Error(`No sessions found for ${repoRoot}`);
@@ -505,13 +528,14 @@ program
   .option('-n, --limit <n>', 'max sessions to scan (newest first)', '200')
   .option('--window <k>', 'sessions per side of each change', '10')
   .option('--json', 'output entries as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .action(
-    async (path: string | undefined, opts: { limit: string; window: string; json?: boolean }) => {
+    async (path: string | undefined, opts: { limit: string; window: string; json?: boolean; html?: boolean | string }) => {
       const repoRoot = resolveRepoRoot(path ?? process.cwd());
       const changes = readInstructionChanges(repoRoot);
       const sessions = await loadSessionsForRepo(repoRoot, Number(opts.limit));
       const entries = computeEfficacy(changes, steeringSamples(sessions), Number(opts.window));
-      console.log(opts.json ? JSON.stringify(entries, null, 2) : renderEfficacy(entries));
+      await deliver('efficacy', `instruction efficacy — ${repoRoot}`, renderEfficacy(entries), entries, opts);
     },
   );
 
@@ -527,6 +551,7 @@ program
   .option('--yes', 'skip the token-estimate confirmation for --deep')
   .option('--model <model>', 'model for --deep claude')
   .option('--json', 'output the report as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .action(
     async (opts: {
       agent: string;
@@ -536,6 +561,7 @@ program
       yes?: boolean;
       model?: string;
       json?: boolean;
+      html?: boolean | string;
     }) => {
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
@@ -561,7 +587,7 @@ program
           }
         }
       }
-      console.log(opts.json ? JSON.stringify(report, null, 2) : renderIntents(report));
+      await deliver('intents', 'session intents', renderIntents(report), report, opts);
     },
   );
 
@@ -571,6 +597,7 @@ program
   .option('-c, --claude <id>', 'claude session id (repeatable)', collect, [])
   .option('-o, --codex <id>', 'codex session id (repeatable)', collect, [])
   .option('--json', 'output both reports and the comparison rows as JSON')
+  .option('--html [file]', 'write the comparison as a styled HTML page')
   .addHelpText(
     'after',
     `
@@ -580,7 +607,7 @@ Examples:
 Order: A = first id given (claude ids first), B = second.
 `,
   )
-  .action(async (opts: { claude: string[]; codex: string[]; json?: boolean }) => {
+  .action(async (opts: { claude: string[]; codex: string[]; json?: boolean; html?: boolean | string }) => {
     const byKind = (kind: string) => AGENTS.find((a) => a.kind === kind)!;
     const selectors = [
       ...opts.claude.map((id) => ({ agent: byKind('claude'), id })),
@@ -597,11 +624,13 @@ Order: A = first id given (claude ids first), B = second.
       }),
     );
     const [a, b] = reports;
-    if (opts.json) {
-      console.log(JSON.stringify({ a, b, rows: compareReports(a!, b!) }, null, 2));
-    } else {
-      console.log(renderComparison(a!, b!));
-    }
+    await deliver(
+      'compare',
+      `compare ${shortId(a!.session.id)} vs ${shortId(b!.session.id)}`,
+      renderComparison(a!, b!),
+      { a, b, rows: compareReports(a!, b!) },
+      opts,
+    );
   });
 
 program
@@ -706,19 +735,16 @@ program
   .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
   .option('--include-subagents', 'keep agent-spawned sessions')
   .option('--json', 'output the report as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .action(
-    async (opts: { agent: string; limit: string; since?: string; includeSubagents?: boolean; json?: boolean }) => {
+    async (opts: { agent: string; limit: string; since?: string; includeSubagents?: boolean; json?: boolean; html?: boolean | string }) => {
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
       const report = buildModelReport(sessions);
       const cache = await readClaudeStatsCache();
       const longRange = cache?.dailyModelTokens ? buildLongRangeHistory(cache.dailyModelTokens) : undefined;
-      if (opts.json) {
-        console.log(JSON.stringify({ ...report, longRange }, null, 2));
-      } else {
-        console.log(renderModelReport(report));
-        if (longRange) console.log('\n' + renderLongRangeHistory(longRange));
-      }
+      const text = renderModelReport(report) + (longRange ? '\n\n' + renderLongRangeHistory(longRange) : '');
+      await deliver('models', 'model usage history', text, { ...report, longRange }, opts);
     },
   );
 
@@ -740,6 +766,7 @@ program
   .option('--prompt-file <path>', 'override the suggest prompt template with a file')
   .option('--yes', 'skip the token-estimate confirmation for --suggest')
   .option('--json', 'output the raw stats as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .addHelpText(
     'after',
     `
@@ -773,6 +800,7 @@ Examples:
       model?: string;
       promptFile?: string;
       json?: boolean;
+      html?: boolean | string;
     }) => {
       if (opts.faq) {
         const repoRoot = resolveRepoRoot(typeof opts.faq === 'string' ? opts.faq : process.cwd());
@@ -796,7 +824,12 @@ Examples:
         console.log(JSON.stringify(stats, null, 2));
         return;
       }
-      console.log(renderDistillStats(stats));
+      let body = renderDistillStats(stats);
+      if (!opts.suggest) {
+        await deliver('distill', 'distill — recurrence stats', body, stats, opts);
+        return;
+      }
+      if (!opts.html) console.log(body);
 
       if (opts.suggest) {
         if (opts.suggest !== 'claude' && opts.suggest !== 'codex') {
@@ -814,8 +847,14 @@ Examples:
           yes: opts.yes,
         });
         if (!approved) return;
-        console.log(`\n— asking ${opts.suggest} for recommendations…\n`);
-        console.log(await runSuggest(stats, { backend, model: opts.model, template }));
+        console.log(`\n— asking ${opts.suggest} for recommendations…`);
+        const recommendations = await runSuggest(stats, { backend, model: opts.model, template });
+        if (opts.html) {
+          body += `\n\nRecommendations (${backend}):\n\n${recommendations}`;
+          await deliver('distill', 'distill — recurrence stats + recommendations', body, stats, opts);
+        } else {
+          console.log('\n' + recommendations);
+        }
       }
     },
   );
