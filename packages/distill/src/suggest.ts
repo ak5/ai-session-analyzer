@@ -24,11 +24,13 @@ export interface SuggestOptions {
 /** Trim stats for the payload: cap list sizes so the call stays cheap. */
 export function trimStatsForPayload(stats: DistillStats): DistillStats {
   const cap = <T>(xs: T[], n: number) => xs.slice(0, n);
+  const strip = <T extends { memberRefs?: unknown }>(xs: T[]) =>
+    xs.map(({ memberRefs: _refs, ...rest }) => rest as T);
   return {
     ...stats,
-    procedures: cap(stats.procedures, 15),
-    questions: cap(stats.questions, 15),
-    lessons: cap(stats.lessons, 10),
+    procedures: strip(cap(stats.procedures, 15)),
+    questions: strip(cap(stats.questions, 15)),
+    lessons: strip(cap(stats.lessons, 10)),
     toolSequences: cap(stats.toolSequences, 12),
     commandUsage: cap(stats.commandUsage, 20),
   };

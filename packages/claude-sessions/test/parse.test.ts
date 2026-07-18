@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseJsonl } from '@asa/core';
 import { forkClaudeSessionAtStep } from '../src/fork.js';
-import { normalizeClaudeRecords, readClaudeSessionCwd } from '../src/parse.js';
+import { normalizeClaudeRecords, readClaudeSessionCwd, readClaudeStepResponse } from '../src/parse.js';
 import { annotateStepsWithGitTrace } from '../src/trace.js';
 import { parseClaudeUsageOutput } from '../src/usage.js';
 import type { ClaudeRecord } from '../src/records.js';
@@ -311,6 +311,17 @@ describe('parseClaudeUsageOutput', () => {
 
   it('returns undefined for unrecognizable output', () => {
     expect(parseClaudeUsageOutput('Not logged in')).toBeUndefined();
+  });
+});
+
+describe('readClaudeStepResponse', () => {
+  it('collects assistant text for a step, stopping at the next prompt', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-resp-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    expect(await readClaudeStepResponse(filePath, 'u1')).toBe('thinking about it');
+    expect(await readClaudeStepResponse(filePath, 'u3')).toBe('done');
+    expect(await readClaudeStepResponse(filePath, 'nope')).toBeUndefined();
   });
 });
 

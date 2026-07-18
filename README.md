@@ -136,8 +136,10 @@ Lint:
 **`asa distill --since 60d`** — what should stop being typed by hand. Deterministic
 recurrence mining (prompt clusters, tool-sequence n-grams like `exec:gh → exec:gh`
 across 11 sessions), then `--suggest claude|codex` turns the stats into
-recommendations: skills to extract, CLAUDE.md rules, automations, `docs/dev-faq.md`
-entries, flashcard-worthy retention gaps.
+recommendations: skills to extract, CLAUDE.md rules, automations, flashcard-worthy
+retention gaps. And `--faq [repo]` writes `docs/dev-faq.md` for real: recurring
+questions with answers extracted from the transcripts (you already paid for
+them), edit-preserving on regeneration.
 
 ```console
 Recurring procedures (skill candidates):

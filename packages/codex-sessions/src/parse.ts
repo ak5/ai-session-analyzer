@@ -25,6 +25,34 @@ export async function readCodexLines(filePath: string): Promise<CodexLine[]> {
   return parseJsonl<CodexLine>(await readFile(filePath, 'utf8'));
 }
 
+/** The assistant's text response to one turn: agent_message events until the next task_started. */
+export async function readCodexStepResponse(
+  filePath: string,
+  turnId: string,
+): Promise<string | undefined> {
+  const lines = await readCodexLines(filePath);
+  let inTurn = false;
+  let ordinal = 0;
+  const parts: string[] = [];
+  for (const line of lines) {
+    if (line.type === 'event_msg' && line.payload?.type === 'task_started') {
+      if (inTurn) break;
+      const id =
+        typeof line.payload.turn_id === 'string' ? line.payload.turn_id : `turn-${ordinal}`;
+      ordinal += 1;
+      if (id === turnId || `turn-${ordinal - 1}` === turnId) inTurn = true;
+      continue;
+    }
+    if (!inTurn) continue;
+    if (line.type === 'event_msg' && line.payload?.type === 'agent_message') {
+      const message = line.payload.message;
+      if (typeof message === 'string') parts.push(message);
+    }
+  }
+  const text = parts.join('\n').trim();
+  return text || undefined;
+}
+
 /** The session's cwd from session_meta, without loading the transcript. */
 export async function readCodexSessionCwd(filePath: string): Promise<string | undefined> {
   for (const line of (await readFirstJsonlObjects(filePath, 3)) as CodexLine[]) {

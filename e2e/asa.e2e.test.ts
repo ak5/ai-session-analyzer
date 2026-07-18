@@ -299,6 +299,12 @@ describe.skipIf(!claudeId && !codexId)(`distill e2e (${setupHint})`, () => {
     expect(res.stdout).not.toContain('asking claude');
   });
 
+  it('--faq reports gracefully when no questions recur', async () => {
+    const res = await asa('distill', '--faq', repoRoot);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toMatch(/No recurring questions|no extractable answers|added \d+ entries/);
+  });
+
   it('rejects unknown --suggest backends', async () => {
     const res = await asa('distill', '--suggest', 'gemini');
     expect(res.code).toBe(1);

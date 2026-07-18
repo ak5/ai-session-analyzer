@@ -146,6 +146,21 @@ describe('normalizeCodexLines', () => {
     expect(session.steps[1]!.promptText).toBe('now the other thing');
   });
 
+  it('reads the agent message for a turn', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-codex-resp-'));
+    const filePath = join(dir, `rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    const lines = fixtureLines();
+    lines.splice(7, 0, {
+      timestamp: '2026-07-17T10:00:06.500Z',
+      type: 'event_msg',
+      payload: { type: 'agent_message', message: 'All done — files listed.' },
+    });
+    await writeFile(filePath, lines.map((l) => JSON.stringify(l)).join('\n'));
+    const { readCodexStepResponse } = await import('../src/parse.js');
+    expect(await readCodexStepResponse(filePath, 'turn-abc')).toBe('All done — files listed.');
+    expect(await readCodexStepResponse(filePath, 'turn-def')).toBeUndefined();
+  });
+
   it('reads cwd from session_meta without loading the transcript', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'asa-codex-test-'));
     const filePath = join(dir, `rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);

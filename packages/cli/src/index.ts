@@ -1,8 +1,12 @@
 import { Command } from 'commander';
 import { previewText, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
 import { analyzeSession, compareReports, renderComparison, renderReport } from '@asa/analyze';
-import { listInstalledClaudeCommands, readClaudeStatsCache } from '@asa/claude-sessions';
-import { listInstalledCodexCommands } from '@asa/codex-sessions';
+import {
+  listInstalledClaudeCommands,
+  readClaudeStatsCache,
+  readClaudeStepResponse,
+} from '@asa/claude-sessions';
+import { listInstalledCodexCommands, readCodexStepResponse } from '@asa/codex-sessions';
 import {
   analyzePrompter,
   buildJudgePrompt,
@@ -14,10 +18,13 @@ import {
 } from '@asa/prompter';
 import {
   buildDistillStats,
+  buildFaqEntry,
   buildSuggestPrompt,
   isInternalSession,
+  mergeFaq,
   renderDistillStats,
   runSuggest,
+  type FaqEntry,
   type SuggestBackend,
 } from '@asa/distill';
 import { askYesNo, confirmModelCall } from './confirm.js';
@@ -414,6 +421,58 @@ Examples:
 
 const collect = (value: string, previous: string[] = []) => [...previous, value];
 
+/** distill --faq: recurring questions in one repo's sessions + answers re-read from the transcripts. */
+async function writeFaq(repoRoot: string, limit: number): Promise<void> {
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const sessions = await loadSessionsForRepo(repoRoot, limit);
+  if (!sessions.length) throw new Error(`No sessions found for ${repoRoot}`);
+  const stats = buildDistillStats(sessions);
+  if (!stats.questions.length) {
+    console.log(`No recurring questions across ${stats.scope.sessions} sessions in ${repoRoot} — nothing to distill yet.`);
+    return;
+  }
+
+  const byKind = new Map(AGENTS.map((a) => [a.kind as string, a]));
+  const entries: FaqEntry[] = [];
+  for (const cluster of stats.questions) {
+    // memberRefs are representative-first: prefer the answer to the exact
+    // phrasing shown as the entry's question over longer sibling answers
+    let best: { answer: string; sessionId: string } | undefined;
+    for (const ref of cluster.memberRefs) {
+      const adapter = byKind.get(ref.agent);
+      const sessionRef = await adapter?.find(ref.sessionId).catch(() => undefined);
+      if (!sessionRef) continue;
+      const answer =
+        ref.agent === 'claude'
+          ? await readClaudeStepResponse(sessionRef.filePath, ref.stepId).catch(() => undefined)
+          : await readCodexStepResponse(sessionRef.filePath, ref.stepId).catch(() => undefined);
+      if (answer) {
+        best = { answer, sessionId: ref.sessionId };
+        break;
+      }
+    }
+    if (best) entries.push(buildFaqEntry(cluster, best.answer, best.sessionId));
+    else console.error(`no extractable answer for: "${cluster.representative.slice(0, 60)}" — skipped`);
+  }
+  if (!entries.length) {
+    console.log('Recurring questions found, but no extractable answers survived — nothing written.');
+    return;
+  }
+
+  const faqPath = join(repoRoot, 'docs', 'dev-faq.md');
+  const existing = await readFile(faqPath, 'utf8').catch(() => undefined);
+  const merged = mergeFaq(existing, entries);
+  if (!merged.added.length) {
+    console.log(`docs/dev-faq.md already covers all ${merged.kept} recurring questions — unchanged.`);
+    return;
+  }
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(join(repoRoot, 'docs'), { recursive: true });
+  await writeFile(faqPath, merged.content);
+  console.log(`${faqPath}: added ${merged.added.length} entries${merged.kept ? `, kept ${merged.kept} existing untouched` : ''}`);
+  for (const q of merged.added) console.log(`  + ${q}`);
+}
+
 /** Sessions whose header cwd matches the repo (or lives under it). */
 async function loadSessionsForRepo(repoRoot: string, limit: number): Promise<NormalizedSession[]> {
   const all = await loadSessionsInScope({ agent: 'all', limit: String(limit) });
@@ -676,6 +735,7 @@ program
     '--suggest <backend>',
     'ship the stats to a model (claude | codex) for extraction recommendations',
   )
+  .option('--faq [path]', 'write docs/dev-faq.md in the repo (default: cwd) from recurring questions + transcript answers')
   .option('--model <model>', 'model for --suggest claude (codex uses its configured default)')
   .option('--prompt-file <path>', 'override the suggest prompt template with a file')
   .option('--yes', 'skip the token-estimate confirmation for --suggest')
@@ -708,11 +768,19 @@ Examples:
       since?: string;
       includeSubagents?: boolean;
       suggest?: string;
+      faq?: boolean | string;
       yes?: boolean;
       model?: string;
       promptFile?: string;
       json?: boolean;
     }) => {
+      if (opts.faq) {
+        const repoRoot = resolveRepoRoot(typeof opts.faq === 'string' ? opts.faq : process.cwd());
+        // repo-scoped scan: the newest-overall window must be wide enough to
+        // reach this repo's sessions among everything else
+        await writeFaq(repoRoot, Math.max(Number(opts.limit), 300));
+        return;
+      }
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
       const projectDirs = [...new Set(sessions.map((s) => s.cwd).filter((c): c is string => !!c))];
