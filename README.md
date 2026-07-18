@@ -72,6 +72,11 @@ Node ≥ 20, pnpm. The global install is a link to your checkout — `git pull &
 pnpm build` updates it in place. Works on the session files alone; the `claude` /
 `codex` CLIs are only needed for `resume`, `fork`, and the opt-in model passes.
 
+Then run **`asa setup`**: an environment report (binaries, session stores,
+stats-cache) plus one optional, confirmed change — raising Claude's transcript
+retention (`cleanupPeriodDays`, default 30 days), which is the ceiling on how far
+back every longitudinal feature (`efficacy`, skill curve, `models`) can see.
+
 ## Inspect
 
 ```sh

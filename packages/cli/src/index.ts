@@ -20,7 +20,8 @@ import {
   runSuggest,
   type SuggestBackend,
 } from '@asa/distill';
-import { confirmModelCall } from './confirm.js';
+import { askYesNo, confirmModelCall } from './confirm.js';
+import { buildSetupReport, DEFAULT_RETENTION_DAYS, readRetention, writeRetention } from './setup.js';
 import {
   AGENT_FILTER_VALUES,
   AGENTS,
@@ -561,6 +562,34 @@ Examples:
     const { actions } = installGitTraceHooks(target, { jj: opts.jj });
     console.log(`install-hooks in ${target}:`);
     for (const action of actions) console.log(`  · ${action}`);
+  });
+
+program
+  .command('setup')
+  .description(
+    'Onboarding check: binaries, session stores, stats-cache — and one optional change: raise Claude transcript retention so longitudinal analysis (efficacy, skill curve, models) can see further back',
+  )
+  .option('--retention-days <n>', 'retention to offer', String(DEFAULT_RETENTION_DAYS))
+  .option('--yes', 'apply the retention change without asking')
+  .action(async (opts: { retentionDays: string; yes?: boolean }) => {
+    for (const line of await buildSetupReport()) console.log(`  ${line}`);
+
+    const target = Number(opts.retentionDays);
+    const retention = readRetention();
+    if (retention.effective >= target) {
+      console.log(`\nRetention already ${retention.effective} days — nothing to change.`);
+      return;
+    }
+    console.log(
+      `\nOptional: raise cleanupPeriodDays ${retention.current === undefined ? '(unset, default 30)' : `from ${retention.current}`} to ${target} in ${retention.settingsPath}.` +
+        '\nEvery longitudinal asa feature gets smarter with more history; transcripts are plain text and cheap to keep.',
+    );
+    if (await askYesNo(`  apply? [y/N] `, opts.yes, 'retention unchanged')) {
+      writeRetention(retention.settingsPath, target);
+      console.log(`Set cleanupPeriodDays = ${target}.`);
+    } else {
+      console.log('Left unchanged.');
+    }
   });
 
 program

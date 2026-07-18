@@ -11,7 +11,7 @@
  * Requires a build first (`pnpm test:e2e` handles that).
  */
 import { execFile } from 'node:child_process';
-import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -227,6 +227,25 @@ describe.skipIf(!claudeId || !codexId)(`compare e2e (${setupHint})`, () => {
     const res = await asa('compare', '-c', claudeId!);
     expect(res.code).toBe(1);
     expect(res.stderr).toContain('exactly two session ids');
+  });
+});
+
+describe('setup e2e', () => {
+  it('reports the environment and applies retention only with --yes', async () => {
+    const report = await asa('setup');
+    expect(report.code).toBe(0);
+    expect(report.stdout).toContain('transcript retention');
+    expect(report.stdout).toContain('Left unchanged');
+
+    const applied = await asa('setup', '--yes', '--retention-days', '180');
+    expect(applied.stdout).toContain('Set cleanupPeriodDays = 180');
+    const settings = JSON.parse(
+      readFileSync(join(claudeHome, 'settings.json'), 'utf8'),
+    ) as { cleanupPeriodDays?: number };
+    expect(settings.cleanupPeriodDays).toBe(180);
+
+    const again = await asa('setup', '--retention-days', '180');
+    expect(again.stdout).toContain('nothing to change');
   });
 });
 

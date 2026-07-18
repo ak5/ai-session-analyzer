@@ -57,14 +57,19 @@ export async function confirmModelCall(plan: ModelCallPlan): Promise<boolean> {
     }
   }
 
-  if (plan.yes) return true;
+  return askYesNo('  proceed? [y/N] ', plan.yes, 'skipping the model call');
+}
+
+/** TTY yes/no gate: --yes short-circuits; non-interactive runs decline with a hint. */
+export async function askYesNo(question: string, yes?: boolean, skipNote?: string): Promise<boolean> {
+  if (yes) return true;
   if (!process.stdin.isTTY) {
-    console.error('  non-interactive session — pass --yes to proceed; skipping the model call');
+    console.error(`  non-interactive session — pass --yes to proceed${skipNote ? `; ${skipNote}` : ''}`);
     return false;
   }
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   try {
-    const answer = await rl.question('  proceed? [y/N] ');
+    const answer = await rl.question(question);
     return /^y(es)?$/i.test(answer.trim());
   } finally {
     rl.close();
