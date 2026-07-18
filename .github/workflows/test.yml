@@ -2,8 +2,8 @@ name: test
 
 # Quality gate — build + unit + synthetic-fixture e2e. Runs on every push to
 # main/dev and on PRs. `quality-gates` is the required check on main.
-# Runs on the infra ci-runner fleet (repo lane: ak5/ai-session-analyzer,
-# plain labels — no docker needed for pnpm build/test).
+# Public repo: GitHub-hosted runners are free with no minute caps, and keep
+# fork-PR code off our own hardware.
 
 on:
   push:
@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   quality-gates:
-    runs-on: [self-hosted, cirunner]
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -36,6 +36,6 @@ jobs:
   # targets main (feature branches land on dev first, then dev → main).
   main-from-dev:
     if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref != 'dev' }}
-    runs-on: [self-hosted, cirunner]
+    runs-on: ubuntu-latest
     steps:
       - run: 'echo "::error::main only accepts PRs from dev (got ${{ github.head_ref }})"; exit 1'
