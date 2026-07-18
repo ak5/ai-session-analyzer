@@ -1,12 +1,5 @@
 import { Command } from 'commander';
 import { previewText, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
-import {
-  findClaudeSession,
-  forkClaudeSessionAtStep,
-  listClaudeSessions,
-  loadClaudeSession,
-} from '@asa/claude-sessions';
-import { findCodexSession, listCodexSessions, loadCodexSession } from '@asa/codex-sessions';
 import { analyzeSession, renderReport } from '@asa/analyze';
 import {
   analyzePrompter,
@@ -16,34 +9,39 @@ import {
   selectJudgeSamples,
   type JudgeResult,
 } from '@asa/prompter';
+import {
+  AGENT_FILTER_VALUES,
+  AGENTS,
+  SELECTOR_HINT,
+  agentsForFilter,
+  type AgentAdapter,
+} from './agents.js';
 import { spawnAgentCli } from './spawn.js';
 
-interface SessionSelector {
-  claudeSession?: string;
-  codexSession?: string;
+type SelectorOpts = Record<string, string | undefined>;
+
+interface Selected {
+  adapter: AgentAdapter;
+  ref: SessionRef;
 }
 
-async function resolveSession(sel: SessionSelector): Promise<SessionRef> {
-  if (!!sel.claudeSession === !!sel.codexSession) {
-    throw new Error('Pass exactly one of --claude-session <id> or --codex-session <id>');
+async function resolveSession(opts: SelectorOpts): Promise<Selected> {
+  const chosen = AGENTS.filter((a) => opts[a.flag] !== undefined);
+  if (chosen.length !== 1) {
+    throw new Error(`Pass exactly one of ${SELECTOR_HINT}`);
   }
-  const ref = sel.claudeSession
-    ? await findClaudeSession(sel.claudeSession)
-    : await findCodexSession(sel.codexSession!);
-  if (!ref) {
-    throw new Error(`No ${sel.claudeSession ? 'Claude' : 'Codex'} session matching "${sel.claudeSession ?? sel.codexSession}"`);
-  }
-  return ref;
-}
-
-async function loadSession(ref: SessionRef): Promise<NormalizedSession> {
-  return ref.agent === 'claude' ? loadClaudeSession(ref.filePath) : loadCodexSession(ref.filePath);
+  const adapter = chosen[0]!;
+  const idOrPrefix = opts[adapter.flag]!;
+  const ref = await adapter.find(idOrPrefix);
+  if (!ref) throw new Error(`No ${adapter.kind} session matching "${idOrPrefix}"`);
+  return { adapter, ref };
 }
 
 function addSelectorOptions(cmd: Command): Command {
-  return cmd
-    .option('--claude-session <id>', 'Claude Code session id (or unique prefix)')
-    .option('--codex-session <id>', 'Codex session id (or unique prefix)');
+  for (const agent of AGENTS) {
+    cmd.option(`-${agent.short}, --${agent.flag} <id>`, `${agent.kind} session id (or unique prefix)`);
+  }
+  return cmd;
 }
 
 function parseSince(value: string): Date {
@@ -65,21 +63,16 @@ async function loadSessionsForPrompter(opts: {
   since?: string;
   includeSubagents?: boolean;
 }): Promise<NormalizedSession[]> {
-  const wantClaude = opts.agent === 'all' || opts.agent === 'claude';
-  const wantCodex = opts.agent === 'all' || opts.agent === 'codex';
-  const [claude, codex] = await Promise.all([
-    wantClaude ? listClaudeSessions() : Promise.resolve([]),
-    wantCodex ? listCodexSessions() : Promise.resolve([]),
-  ]);
-  let refs = [...claude, ...codex].sort(
-    (a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0),
-  );
+  const adapters = agentsForFilter(opts.agent);
+  const listed = await Promise.all(adapters.map((a) => a.list()));
+  let refs = listed.flat().sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
   if (opts.since) {
     const cutoff = parseSince(opts.since);
     refs = refs.filter((r) => (r.updatedAt?.getTime() ?? 0) >= cutoff.getTime());
   }
   refs = refs.slice(0, Number(opts.limit));
 
+  const byKind = new Map(AGENTS.map((a) => [a.kind, a]));
   const sessions: NormalizedSession[] = [];
   for (const ref of refs) {
     if ((ref.sizeBytes ?? 0) > PROMPTER_MAX_FILE_BYTES) {
@@ -87,7 +80,7 @@ async function loadSessionsForPrompter(opts: {
       continue;
     }
     try {
-      sessions.push(await loadSession(ref));
+      sessions.push(await byKind.get(ref.agent)!.load(ref.filePath));
     } catch (err) {
       console.error(`skipping ${ref.agent} ${ref.id}: ${err instanceof Error ? err.message : err}`);
     }
@@ -105,27 +98,27 @@ const USE_CASES = `
 Use cases:
   Find and inspect your most recent expensive session
     $ asa list -n 10
-    $ asa analyze --claude-session <id>          # tokens, steps, tools, MCP, subagents
+    $ asa analyze -c <id>                        # tokens, steps, tools, MCP, subagents
 
   Re-enter a warmed-up session instead of re-explaining from scratch
-    $ asa analyze --claude-session <id>          # pick a step id from the Steps table
-    $ asa fork --claude-session <id> --at <stepId>
+    $ asa analyze -c <id>                        # pick a step id from the Steps table
+    $ asa fork -c <id> --at <stepId>
     # → truncated copy under a new session id; the replayed prefix hits prompt cache
 
   Try a risky refactor without touching the original conversation
-    $ asa fork --claude-session <id>             # whole-session fork (claude --fork-session)
-    $ asa fork --codex-session <id>              # wraps codex fork
+    $ asa fork -c <id>                           # whole-session fork (claude --fork-session)
+    $ asa fork -o <id>                           # wraps codex fork
 
   Drive a session headlessly from a script
-    $ asa resume --claude-session <id> -p "run the tests and fix failures"
-    $ asa resume --codex-session <id> -p "continue"   # codex exec resume
+    $ asa resume -c <id> -p "run the tests and fix failures"
+    $ asa resume -o <id> -p "continue"           # codex exec resume
 
   Study yourself as a prompter (30 days, both agents)
     $ asa prompter --since 30d --limit 50
     $ asa prompter --deep                        # + LLM-judge pass via claude -p (haiku)
 
   Feed a dashboard or jq pipeline
-    $ asa analyze --claude-session <id> --json | jq '.totals'
+    $ asa analyze -c <id> --json | jq '.totals'
     $ asa prompter --json | jq '.skillCurve'
 `;
 
@@ -142,21 +135,16 @@ program
 
 program
   .command('list')
-  .description('List recent sessions from both agents')
-  .option('--agent <agent>', 'claude | codex | all', 'all')
+  .description('List recent sessions from all agents')
+  .option('--agent <agent>', AGENT_FILTER_VALUES, 'all')
   .option('-n, --limit <n>', 'max sessions per agent', '15')
   .option('--json', 'output JSON')
   .action(async (opts: { agent: string; limit: string; json?: boolean }) => {
     const limit = Number(opts.limit);
-    const wantClaude = opts.agent === 'all' || opts.agent === 'claude';
-    const wantCodex = opts.agent === 'all' || opts.agent === 'codex';
-    const [claude, codex] = await Promise.all([
-      wantClaude ? listClaudeSessions() : Promise.resolve([]),
-      wantCodex ? listCodexSessions() : Promise.resolve([]),
-    ]);
-    const rows = [...claude.slice(0, limit), ...codex.slice(0, limit)].sort(
-      (a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0),
-    );
+    const listed = await Promise.all(agentsForFilter(opts.agent).map((a) => a.list()));
+    const rows = listed
+      .flatMap((refs) => refs.slice(0, limit))
+      .sort((a, b) => (b.updatedAt?.getTime() ?? 0) - (a.updatedAt?.getTime() ?? 0));
     if (opts.json) {
       console.log(JSON.stringify(rows, null, 2));
       return;
@@ -178,9 +166,9 @@ addSelectorOptions(
     .description('Analyze a session: tokens, steps, tool calls, MCP usage, subagents'),
 )
   .option('--json', 'output the full report as JSON')
-  .action(async (opts: SessionSelector & { json?: boolean }) => {
-    const ref = await resolveSession(opts);
-    const report = analyzeSession(await loadSession(ref));
+  .action(async (opts: SelectorOpts & { json?: boolean }) => {
+    const { adapter, ref } = await resolveSession(opts);
+    const report = analyzeSession(await adapter.load(ref.filePath));
     console.log(opts.json ? JSON.stringify(report, null, 2) : renderReport(report));
   });
 
@@ -191,33 +179,24 @@ addSelectorOptions(
 )
   .option('-p, --prompt <prompt>', 'run headless with this prompt instead of interactively')
   .option('--dry-run', 'print the command instead of running it')
-  .action(async (opts: SessionSelector & { prompt?: string; dryRun?: boolean }) => {
-    const ref = await resolveSession(opts);
-    const session = await loadSession(ref);
-    const spawnOpts = { cwd: session.cwd, dryRun: opts.dryRun };
-    const code =
-      ref.agent === 'claude'
-        ? await spawnAgentCli(
-            'claude',
-            opts.prompt ? ['-p', '--resume', ref.id, opts.prompt] : ['--resume', ref.id],
-            spawnOpts,
-          )
-        : await spawnAgentCli(
-            'codex',
-            opts.prompt ? ['exec', 'resume', ref.id, opts.prompt] : ['resume', ref.id],
-            spawnOpts,
-          );
-    process.exitCode = code;
+  .action(async (opts: SelectorOpts & { prompt?: string; dryRun?: boolean }) => {
+    const { adapter, ref } = await resolveSession(opts);
+    const session = await adapter.load(ref.filePath);
+    const { command, args } = adapter.resume(ref.id, opts.prompt);
+    process.exitCode = await spawnAgentCli(command, args, {
+      cwd: session.cwd,
+      dryRun: opts.dryRun,
+    });
   });
 
 addSelectorOptions(
   program
     .command('fork')
     .description(
-      'Fork a session (new session id, original untouched). With --at <stepId>, fork a Claude session at a specific step — reusing the warmed-up context up to that point.',
+      'Fork a session (new session id, original untouched). With --at <stepId>, fork at a specific step — reusing the warmed-up context up to that point.',
     ),
 )
-  .option('--at <stepId>', 'Claude only: step id (record uuid from `asa analyze`) to fork at')
+  .option('--at <stepId>', 'step id (from `asa analyze`) to fork at, where supported')
   .option('-p, --prompt <prompt>', 'run headless with this prompt instead of interactively')
   .option('--no-launch', 'only create the fork, do not launch the agent CLI')
   .option('--dry-run', 'print the command instead of running it')
@@ -232,67 +211,59 @@ Notes:
   not copied.
 
 Examples:
-  $ asa fork --claude-session 092aede3                    # whole-session fork
-  $ asa fork --claude-session 092aede3 --at <stepId>      # fork at a step
-  $ asa fork --claude-session 092aede3 --at <stepId> -p "try approach B instead"
-  $ asa fork --claude-session 092aede3 --at <stepId> --no-launch   # just create it
+  $ asa fork -c 092aede3                    # whole-session fork
+  $ asa fork -c 092aede3 --at <stepId>      # fork at a step
+  $ asa fork -c 092aede3 --at <stepId> -p "try approach B instead"
+  $ asa fork -c 092aede3 --at <stepId> --no-launch   # just create it
 `,
   )
   .action(
     async (
-      opts: SessionSelector & {
+      opts: SelectorOpts & {
         at?: string;
         prompt?: string;
         launch: boolean;
         dryRun?: boolean;
       },
     ) => {
-      const ref = await resolveSession(opts);
-      const session = await loadSession(ref);
+      const { adapter, ref } = await resolveSession(opts);
+      const session = await adapter.load(ref.filePath);
       const spawnOpts = { cwd: session.cwd, dryRun: opts.dryRun };
 
-      if (ref.agent === 'codex') {
-        if (opts.at) throw new Error('--at is not supported for Codex sessions yet');
-        const args = ['fork', ref.id];
-        if (opts.prompt) args.push(opts.prompt);
-        process.exitCode = await spawnAgentCli('codex', args, spawnOpts);
-        return;
-      }
-
       if (opts.at) {
+        if (!adapter.forkAtStep) {
+          const supported = AGENTS.filter((a) => a.forkAtStep).map((a) => a.kind).join(', ');
+          throw new Error(`--at is not supported for ${adapter.kind} sessions yet (only: ${supported})`);
+        }
         if (opts.dryRun) {
           console.log(
             `[dry-run] would fork ${shortId(ref.id)} at step ${shortId(opts.at)}: truncated copy of\n` +
-              `  ${ref.filePath}\n  under a new session id, then \`claude --resume <newId>\``,
+              `  ${ref.filePath}\n  under a new session id, then resume it`,
           );
           return;
         }
-        const fork = await forkClaudeSessionAtStep(ref.filePath, opts.at);
+        const fork = await adapter.forkAtStep(ref.filePath, opts.at);
         console.log(
           `Forked ${shortId(ref.id)} at step ${shortId(opts.at)} → session ${fork.newSessionId}` +
             `\n  ${fork.newFilePath}\n  kept ${fork.keptRecords} records, dropped ${fork.droppedRecords}`,
         );
         if (!opts.launch) return;
-        const args = opts.prompt
-          ? ['-p', '--resume', fork.newSessionId, opts.prompt]
-          : ['--resume', fork.newSessionId];
-        process.exitCode = await spawnAgentCli('claude', args, spawnOpts);
+        const { command, args } = adapter.resume(fork.newSessionId, opts.prompt);
+        process.exitCode = await spawnAgentCli(command, args, spawnOpts);
         return;
       }
 
-      const args = opts.prompt
-        ? ['-p', '--resume', ref.id, '--fork-session', opts.prompt]
-        : ['--resume', ref.id, '--fork-session'];
-      process.exitCode = await spawnAgentCli('claude', args, spawnOpts);
+      const { command, args } = adapter.fork(ref.id, opts.prompt);
+      process.exitCode = await spawnAgentCli(command, args, spawnOpts);
     },
   );
 
 program
   .command('prompter')
   .description(
-    'Analyze the human: prompt specificity, corrections, interruptions, leverage, archetype, lint findings, and a weekly skill curve — aggregated across recent sessions of both agents.',
+    'Analyze the human: prompt specificity, corrections, interruptions, leverage, archetype, lint findings, and a weekly skill curve — aggregated across recent sessions of all agents.',
   )
-  .option('--agent <agent>', 'claude | codex | all', 'all')
+  .option('--agent <agent>', AGENT_FILTER_VALUES, 'all')
   .option('-n, --limit <n>', 'max sessions to load (newest first)', '25')
   .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
   .option('--include-subagents', 'keep agent-spawned sessions (their prompts are machine-written)')

@@ -10,20 +10,21 @@ wraps the real `claude` / `codex` binaries for anything interactive.
 asa list                                  # recent sessions from both agents, newest first
 asa list --agent codex -n 30 --json
 
-asa analyze --claude-session <id>         # tokens, steps, api calls, tool calls, MCP usage, subagents
-asa analyze --codex-session <id> --json   # ids accept unique prefixes
+asa analyze -c <id>                       # tokens, steps, tool calls, MCP usage, subagents
+asa analyze -o <id> --json                # ids accept unique prefixes
 
-asa resume --claude-session <id>          # wraps `claude --resume` in the session's original cwd
-asa resume --codex-session <id> -p "..."  # headless via `codex exec resume`
+asa resume -c <id>                        # wraps `claude --resume` in the session's original cwd
+asa resume -o <id> -p "..."               # headless via `codex exec resume`
 
-asa fork --claude-session <id>            # whole-session fork (`claude --resume <id> --fork-session`)
-asa fork --codex-session <id>             # wraps `codex fork`
-asa fork --claude-session <id> --at <stepId>   # ← fork at a step (see below)
+asa fork -c <id>                          # whole-session fork (`claude --resume <id> --fork-session`)
+asa fork -o <id>                          # wraps `codex fork`
+asa fork -c <id> --at <stepId>            # ← fork at a step (see below)
 
 asa prompter --since 30d                  # analyze the human across recent sessions
 asa prompter --deep                       # + LLM-judge pass (one batched haiku call)
 ```
 
+Session selectors: `-c/--claude <id>` and `-o/--codex <id>` (`-o` as in OpenAI).
 `asa --help` carries a use-case section; every subcommand documents its flags and
 caveats in `asa <cmd> --help`.
 
@@ -61,6 +62,24 @@ Both parsers are hand-rolled and deliberately tolerant (no published schema exis
 for either format; unknown record types are skipped, corrupt lines ignored). See
 [docs/formats.md](docs/formats.md) for the reverse-engineered format notes, including
 the token-counting gotchas.
+
+### Adding an agent (OpenCode, Gemini CLI, …)
+
+The CLI is a thin loop over an agent registry — `packages/cli/src/agents.ts`. A new
+agent needs:
+
+1. a `@asa/<agent>-sessions` package that discovers its session files and normalizes
+   them to `NormalizedSession` (use `claude-sessions`/`codex-sessions` as templates —
+   discovery, tolerant line parser, `interactions` counting);
+2. an `AgentAdapter` entry in the registry: flag letter, list/find/load, and the
+   argv shapes for resume/fork (plus `forkAtStep` if the store allows transcript
+   truncation);
+3. the new kind added to `AgentKind` in `@asa/core`.
+
+`list`, `analyze`, `resume`, `fork`, and `prompter` pick it up automatically.
+OpenCode/Gemini/Copilot aren't shipped yet for one reason: no session data on this
+machine to verify a parser against — format-faithful parsing is the whole product,
+so guessing is worse than omitting.
 
 ## Analyzing the prompter
 

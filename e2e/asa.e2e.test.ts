@@ -78,7 +78,7 @@ describe('asa (no fixtures needed)', () => {
       expect(res.stdout).toContain(cmd);
     }
     expect(res.stdout).toContain('Use cases:');
-    expect(res.stdout).toContain('asa fork --claude-session <id> --at <stepId>');
+    expect(res.stdout).toContain('asa fork -c <id> --at <stepId>');
   });
 
   it('documents fork --at and prompter --deep in subcommand help', async () => {
@@ -94,13 +94,13 @@ describe('asa (no fixtures needed)', () => {
   it('rejects analyze without a session selector', async () => {
     const res = await asa('analyze');
     expect(res.code).toBe(1);
-    expect(res.stderr).toContain('exactly one of --claude-session <id> or --codex-session <id>');
+    expect(res.stderr).toContain('exactly one of --claude <id> (-c) or --codex <id> (-o)');
   });
 
   it('rejects analyze with an unknown session id', async () => {
-    const res = await asa('analyze', '--claude-session', 'ffffffff-ffff-ffff-ffff-ffffffffffff');
+    const res = await asa('analyze', '--claude', 'ffffffff-ffff-ffff-ffff-ffffffffffff');
     expect(res.code).toBe(1);
-    expect(res.stderr).toContain('No Claude session matching');
+    expect(res.stderr).toContain('No claude session matching');
   });
 });
 
@@ -113,7 +113,7 @@ describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
   });
 
   it('analyzes the fixture session', async () => {
-    const res = await asa('analyze', '--claude-session', claudeId!, '--json');
+    const res = await asa('analyze', '--claude', claudeId!, '--json');
     expect(res.code).toBe(0);
     const report = JSON.parse(res.stdout);
     expect(report.session.id).toBe(claudeId);
@@ -124,18 +124,18 @@ describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
     expect(report.session.steps[0].id).toBeTruthy();
   });
 
-  it('renders a human-readable report', async () => {
-    const res = await asa('analyze', '--claude-session', claudeId!);
+  it('renders a human-readable report (short flag)', async () => {
+    const res = await asa('analyze', '-c', claudeId!);
     expect(res.code).toBe(0);
     expect(res.stdout).toContain('claude session');
     expect(res.stdout).toContain('Steps (use the step id');
   });
 
   it('forks at a step and the fork analyzes cleanly', async () => {
-    const analyzed = await asa('analyze', '--claude-session', claudeId!, '--json');
+    const analyzed = await asa('analyze', '--claude', claudeId!, '--json');
     const stepId = JSON.parse(analyzed.stdout).session.steps[0].id as string;
 
-    const forked = await asa('fork', '--claude-session', claudeId!, '--at', stepId, '--no-launch');
+    const forked = await asa('fork', '--claude', claudeId!, '--at', stepId, '--no-launch');
     expect(forked.code).toBe(0);
     const newId = /session ([0-9a-f-]{36})/.exec(forked.stdout)?.[1];
     expect(newId).toBeTruthy();
@@ -143,7 +143,7 @@ describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
     expect(newFile && existsSync(newFile)).toBe(true);
 
     try {
-      const reAnalyzed = await asa('analyze', '--claude-session', newId!, '--json');
+      const reAnalyzed = await asa('analyze', '--claude', newId!, '--json');
       expect(reAnalyzed.code).toBe(0);
       expect(JSON.parse(reAnalyzed.stdout).session.id).toBe(newId);
     } finally {
@@ -152,10 +152,10 @@ describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
   });
 
   it('fork --at --dry-run writes nothing', async () => {
-    const analyzed = await asa('analyze', '--claude-session', claudeId!, '--json');
+    const analyzed = await asa('analyze', '--claude', claudeId!, '--json');
     const stepId = JSON.parse(analyzed.stdout).session.steps[0].id as string;
     const before = readdirSync(join(claudeHome, 'projects'), { recursive: true }).length;
-    const res = await asa('fork', '--claude-session', claudeId!, '--at', stepId, '--dry-run');
+    const res = await asa('fork', '--claude', claudeId!, '--at', stepId, '--dry-run');
     expect(res.code).toBe(0);
     expect(res.stdout).toContain('[dry-run] would fork');
     const after = readdirSync(join(claudeHome, 'projects'), { recursive: true }).length;
@@ -163,14 +163,14 @@ describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
   });
 
   it('resume --dry-run prints the wrapped claude command', async () => {
-    const res = await asa('resume', '--claude-session', claudeId!, '--dry-run');
+    const res = await asa('resume', '--claude', claudeId!, '--dry-run');
     expect(res.code).toBe(0);
     expect(res.stdout).toContain('[dry-run] would run');
     expect(res.stdout).toContain(`claude --resume ${claudeId}`);
   });
 
   it('fork --dry-run prints the wrapped fork command', async () => {
-    const res = await asa('fork', '--claude-session', claudeId!, '--dry-run');
+    const res = await asa('fork', '--claude', claudeId!, '--dry-run');
     expect(res.code).toBe(0);
     expect(res.stdout).toContain(`claude --resume ${claudeId} --fork-session`);
   });
@@ -204,7 +204,7 @@ describe.skipIf(!codexId)(`codex e2e ${codexId ?? `(${setupHint})`}`, () => {
   });
 
   it('analyzes the fixture session', async () => {
-    const res = await asa('analyze', '--codex-session', codexId!, '--json');
+    const res = await asa('analyze', '--codex', codexId!, '--json');
     expect(res.code).toBe(0);
     const report = JSON.parse(res.stdout);
     expect(report.session.id).toBe(codexId);
@@ -213,15 +213,15 @@ describe.skipIf(!codexId)(`codex e2e ${codexId ?? `(${setupHint})`}`, () => {
   });
 
   it('resume --dry-run prints the wrapped codex command', async () => {
-    const res = await asa('resume', '--codex-session', codexId!, '--dry-run');
+    const res = await asa('resume', '--codex', codexId!, '--dry-run');
     expect(res.code).toBe(0);
     expect(res.stdout).toContain('[dry-run] would run');
     expect(res.stdout).toContain(`codex resume ${codexId}`);
   });
 
-  it('rejects --at for codex forks', async () => {
-    const res = await asa('fork', '--codex-session', codexId!, '--at', 'e2e-turn-1');
+  it('rejects --at for codex forks (short flag)', async () => {
+    const res = await asa('fork', '-o', codexId!, '--at', 'e2e-turn-1');
     expect(res.code).toBe(1);
-    expect(res.stderr).toContain('--at is not supported for Codex sessions yet');
+    expect(res.stderr).toContain('--at is not supported for codex sessions yet (only: claude)');
   });
 });
