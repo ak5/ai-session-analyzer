@@ -4,11 +4,8 @@
  * everything else — spawn the user's own claude/codex binaries.
  */
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { ASA_INTERNAL_SENTINEL, type DistillStats } from './stats.js';
 import { DEFAULT_SUGGEST_TEMPLATE } from './suggest-template.js';
-
-const execFileAsync = promisify(execFile);
 
 export type SuggestBackend = 'claude' | 'codex';
 
@@ -47,13 +44,19 @@ export function buildSuggestPrompt(stats: DistillStats, template = DEFAULT_SUGGE
   ].join('\n');
 }
 
-const defaultRunner = async (command: string, args: string[]): Promise<string> => {
-  const { stdout } = await execFileAsync(command, args, {
-    timeout: 300_000,
-    maxBuffer: 8 * 1024 * 1024,
+const defaultRunner = (command: string, args: string[]): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const child = execFile(
+      command,
+      args,
+      { timeout: 300_000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout, stderr) =>
+        err ? reject(new Error(stderr.trim() || err.message)) : resolve(stdout),
+    );
+    // codex exec treats a piped-open stdin as "more input coming" and blocks
+    // forever waiting for EOF — close it; the prompt travels as an argument
+    child.stdin?.end();
   });
-  return stdout;
-};
 
 export function suggestInvocation(backend: SuggestBackend, prompt: string, model?: string): {
   command: string;

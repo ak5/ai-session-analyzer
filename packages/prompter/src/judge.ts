@@ -12,10 +12,7 @@
  *   why this only runs behind the explicit --deep flag.
  */
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { StepSignal } from './stats.js';
-
-const execFileAsync = promisify(execFile);
 
 export interface JudgeSample {
   id: string;
@@ -43,14 +40,18 @@ export interface JudgeResult {
 
 export type JudgeRunner = (prompt: string, model: string) => Promise<string>;
 
-const defaultRunner: JudgeRunner = async (prompt, model) => {
-  const { stdout } = await execFileAsync(
-    'claude',
-    ['-p', '--model', model, '--no-session-persistence', prompt],
-    { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
-  );
-  return stdout;
-};
+const defaultRunner: JudgeRunner = (prompt, model) =>
+  new Promise((resolve, reject) => {
+    const child = execFile(
+      'claude',
+      ['-p', '--model', model, '--no-session-persistence', prompt],
+      { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 },
+      (err, stdout, stderr) =>
+        err ? reject(new Error(stderr.trim() || err.message)) : resolve(stdout),
+    );
+    // never leave a piped stdin dangling for CLIs that wait on it
+    child.stdin?.end();
+  });
 
 /** Corrected-then-longest sampling: failure cases first, then the big briefs. */
 export function selectJudgeSamples(signals: StepSignal[], limit: number): JudgeSample[] {

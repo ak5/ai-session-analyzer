@@ -138,7 +138,8 @@ function generateCodexSession(): void {
   execFileSync('codex', ['exec', '--skip-git-repo-check', CODEX_PROMPT], {
     cwd: repoRoot,
     env: { ...process.env, CODEX_HOME: codexHome },
-    stdio: 'inherit',
+    // stdin ignored: codex exec blocks reading a piped stdin that never closes
+    stdio: ['ignore', 'inherit', 'inherit'],
     timeout: 180_000,
   });
 }
