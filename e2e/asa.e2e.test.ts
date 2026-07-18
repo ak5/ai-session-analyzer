@@ -257,6 +257,23 @@ describe('setup e2e', () => {
   });
 });
 
+describe('setup --undo-redo e2e', () => {
+  it('installs claude commands and codex skills into the sandbox homes with --yes', async () => {
+    const res = await asa('setup', '--undo-redo', '--yes');
+    expect(res.code).toBe(0);
+    expect(existsSync(join(claudeHome, 'commands', 'undo.md'))).toBe(true);
+    expect(existsSync(join(claudeHome, 'commands', 'redo.md'))).toBe(true);
+    expect(existsSync(join(codexHome, 'skills', 'undo', 'SKILL.md'))).toBe(true);
+    expect(readFileSync(join(codexHome, 'skills', 'undo', 'SKILL.md'), 'utf8')).toContain('name: undo');
+  });
+
+  it('only hints at the step without the flag', async () => {
+    const res = await asa('setup');
+    expect(res.stdout).toContain('--undo-redo to include the experimental');
+    expect(res.stdout).not.toContain('EXPERIMENTAL): install undo/redo');
+  });
+});
+
 describe('install-hooks e2e', () => {
   it('installs trace hooks into a fresh git repo', async () => {
     const { mkdtempSync } = await import('node:fs');

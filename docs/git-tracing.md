@@ -46,3 +46,14 @@ jj op diff --op <id> # what changed in that window
 Codex rollouts already record `git.commit_hash` at session start, but Codex has
 no per-turn hook surface today, so per-step tracing is Claude-only. If/when codex
 grows hooks, the trace format and join are agent-agnostic.
+
+## Undo/redo (experimental, `asa setup --undo-redo`)
+
+Rides the op log: the trace hook — when armed by a repo's `.asa/undo-redo`
+marker — pushes the current op id onto `.jj/undo-stack-<session>` at every
+Claude prompt (turn boundary) and clears the redo stack. `/undo` pops and
+`jj op restore`s back one turn; `/redo` returns. Codex gets `$undo`/`$redo`
+twins, but has no prompt-hook surface to mark turns: with an empty stack,
+`$undo` falls back to the previous op-log entry — one level, stated in the
+skill. Stack files live in `.jj/` (self-ignored by both VCSs). Reversible:
+delete the commands/skills and the marker.

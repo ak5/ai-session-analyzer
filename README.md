@@ -76,7 +76,9 @@ Then run **`asa setup`**: an environment report, then three independently
 confirmed opt-in steps — raise Claude's transcript retention globally
 (`cleanupPeriodDays`, default 30 days — the ceiling on every longitudinal
 feature), install per-prompt git tracing into the current repo, and colocate
-jj for op-log snapshots of agent edits.
+jj for op-log snapshots of agent edits. A fourth, flag-gated step
+(`--undo-redo`, experimental) installs /undo /redo commands for Claude and
+$undo $redo skills for Codex, riding the same jj op log.
 
 ## Inspect
 
