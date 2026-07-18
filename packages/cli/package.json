@@ -1,6 +1,6 @@
 {
   "name": "@ak5/asa",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0-rc.2",
   "description": "ai session analyzer — analyze, resume, fork and distill Claude Code & Codex CLI sessions",
   "type": "module",
   "bin": {
