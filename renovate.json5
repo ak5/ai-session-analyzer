@@ -1,0 +1,16 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["config:recommended", "helpers:pinGitHubActionDigests"],
+  baseBranchPatterns: ["dev"],
+  dependencyDashboard: true,
+  automerge: false,
+  prConcurrentLimit: 5,
+  branchConcurrentLimit: 8,
+  packageRules: [
+    {
+      description: "Require dashboard approval for major updates",
+      matchUpdateTypes: ["major"],
+      dependencyDashboardApproval: true,
+    },
+  ],
+}
