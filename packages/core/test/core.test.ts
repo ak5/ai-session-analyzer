@@ -63,7 +63,7 @@ describe('readFirstJsonlObjects', () => {
 });
 
 describe('renderHtmlReport', () => {
-  it('escapes content and highlights lint lines', async () => {
+  it('escapes content, promotes headings, and badges lint lines', async () => {
     const { renderHtmlReport } = await import('../src/index.js');
     const html = renderHtmlReport({
       title: 'x <script>',
@@ -73,9 +73,30 @@ describe('renderHtmlReport', () => {
     });
     expect(html).toContain('&lt;script&gt;');
     expect(html).not.toContain('<script>');
-    expect(html).toContain('<span class="warn">');
-    expect(html).toContain('<span class="info">');
+    expect(html).toContain('<h2>Lint</h2>');
+    expect(html).toContain('class="badge warn"');
+    expect(html).toContain('class="badge info"');
     expect(html).toContain('too &lt;vague&gt;');
+  });
+
+  it('parses column-aligned tables into semantic tables with numeric alignment', async () => {
+    const { parseReportBlocks } = await import('../src/index.js');
+    const body = [
+      'Tools:',
+      'tool name   calls  errors',
+      '----------  -----  ------',
+      'Bash fancy  1,402  16',
+      'Edit        165    0',
+      '',
+      'plain trailing text',
+    ].join('\n');
+    const blocks = parseReportBlocks(body);
+    expect(blocks.map((b) => b.kind)).toEqual(['heading', 'table', 'lines']);
+    const table = blocks[1] as Extract<(typeof blocks)[number], { kind: 'table' }>;
+    expect(table.header).toEqual(['tool name', 'calls', 'errors']);
+    // cells containing spaces survive because columns come from the dash rule
+    expect(table.rows[0]).toEqual(['Bash fancy', '1,402', '16']);
+    expect(table.numeric).toEqual([false, true, true]);
   });
 });
 
