@@ -4,104 +4,112 @@
 
 Your AI coding sessions are a dataset. **asa** turns the transcripts that Claude Code
 and Codex CLI already write to disk into something you can **inspect** (tokens, steps,
-tools, cost), **act on** (resume and fork sessions — including forking *mid-conversation*
-to reuse a warmed-up context), and **learn from** (what you keep re-asking, whether your
-CLAUDE.md edits actually work, where your tokens really go).
+tools, cost), **act on** (resume and fork sessions — including forking
+*mid-conversation* to reuse a warmed-up context), and **learn from** (what you keep
+re-typing, whether your CLAUDE.md edits actually work, where your tokens really go).
 
-`asa` never reimplements the agents. It parses their session files and wraps the real
-`claude` / `codex` binaries for anything interactive.
+`asa` never reimplements the agents — it parses their session files and wraps the real
+`claude` / `codex` binaries for anything interactive. **Everything runs locally**
+against `~/.claude` and `~/.codex`; nothing leaves your machine except two explicitly
+opt-in flags (`--deep`, `--suggest`), which send short prompt excerpts through your own
+`claude`/`codex` CLIs to your own accounts.
 
-**Everything runs locally** against `~/.claude` and `~/.codex`. Nothing leaves your
-machine except two explicitly opt-in flags (`--deep`, `--suggest`), which send short
-prompt excerpts through your own `claude`/`codex` CLIs to your own accounts.
-
-## A taste
-
-```console
-$ asa analyze -c 092aede3
-claude session 092aede3-e6c8-4377-b895-05a3605af00b
-  title    Build AI session analyzer with fork and token tracking
-  cwd      /Users/ak5/Projects/ai-session-analyzer
-  model    claude-fable-5
-
-steps 7 · api calls 103 · tool calls 169 · subagents 3 · duration 13h 54m
-tokens: in 188, out 161,117, cache-read 15,969,935 — total 16,661,925
-content: human 5,581 chars (2%) · harness 153,057 (44%) · tool results 189,290 (54%)
-
-Steps (use the step id with `asa fork --at <id>`):
-#  step id                               api  tools  prompt
-1  025bf4c2-d128-49af-a193-cf09bcb5cf87  31   58     i need a plan to scaffold me…
-2  336a91f4-7342-453e-a2cd-8315f9750f97  7    11     /goal get a v1-rc out on main…
-5  83421cf1-4fc4-48bb-a511-89a7bc34538d  1    0      how would one analyze the human prompter?…
-```
-
-That `content:` line is your **context tax** — 44% of this session's input was
-harness-injected instructions, not conversation. And every step id is a **time-travel
-point**:
-
-```console
-$ asa fork -c 092aede3 --at 83421cf1
-Forked 092aede3 at step 83421cf1 → session a2807c82-14aa-4ccd-b13b-98c4ef9de525
-  kept 461 records, dropped 281
-→ claude --resume a2807c82…   # re-enter the conversation as it was at step 5
-```
-
-The original session is untouched; the replayed prefix hits prompt cache. Then measure
-what the alternate timeline cost:
-
-```console
-$ asa compare -c 092aede3 -c a2807c82
-metric        A           B          Δ            Δ%
-steps         20          5          -15          -75%
-total tokens  39,278,156  8,031,034  -31,247,122  -80%
-```
-
-## Install
-
-From a clone (npm package coming soon):
+## Quick start
 
 ```sh
 git clone https://github.com/ak5/ai-session-analyzer
 cd ai-session-analyzer
 pnpm install && pnpm build
 npm i -g ./packages/cli        # links the bundled CLI globally as `asa`
-asa --version
 ```
 
-Node ≥ 20, pnpm. The global install is a link to your checkout — `git pull &&
-pnpm build` updates it in place. Works on the session files alone; the `claude` /
-`codex` CLIs are only needed for `resume`, `fork`, and the opt-in model passes.
+Node ≥ 20, pnpm. (npm package coming soon; the global install is a link to your
+checkout — `git pull && pnpm build` updates it in place.) The `claude` / `codex`
+CLIs are only needed for `resume`, `fork`, and the opt-in model passes — analysis
+works on the session files alone.
 
-Then run **`asa setup`**: an environment report, then three independently
-confirmed opt-in steps — raise Claude's transcript retention globally
-(`cleanupPeriodDays`, default 30 days — the ceiling on every longitudinal
-feature), install per-prompt git tracing into the current repo, and colocate
-jj for op-log snapshots of agent edits.
+**Sixty seconds to your first insight:**
 
-## Inspect
+```console
+$ asa list -n 10                # what do I have? (both agents, grouped by project)
+/Users/you/Projects/botyard — 2 sessions
+  2026-07-19 05:37  claude adad3a2f-7946-4a4a-a833-6daf8524a8f5   9603kB
+  2026-07-18 13:53  claude 5f2066c3-7231-41ed-bdf2-e7c1e463653f   4405kB
+/Users/you/Projects/showyourcards/app — 2 sessions
+  2026-07-19 05:16  codex  019f69e7-30f3-77d0-95a3-3c4f86be2ce6   8147kB
+  …
 
-```sh
-asa list                        # sessions from both agents, grouped by project folder
-asa list --flat -n 30 --json    # or flat / machine-readable
-asa analyze -c <id>             # tokens, steps, tool calls, MCP usage, subagents
-asa analyze -o <id> --json      # -c/--claude, -o/--codex (as in OpenAI); ids accept unique prefixes
-asa compare -c <a> -c <b>       # metric deltas — original vs fork, or -c vs -o cross-agent
+$ asa analyze -c adad3a2f       # where did that one go? (ids accept unique prefixes)
+steps 87 · api calls 529 · tool calls 699 (0 mcp, 20 errors) · subagents 3 · duration 27h
+tokens: in 975, out 650,413, cache-read 267,016,252 — total 269,437,886
+content: human 8,212 chars (1%) · harness 333,926 (54%) · tool results 281,014 (45%)
+
+$ asa distill --since 30d       # what do I keep typing by hand?
+Recurring procedures (skill candidates):
+×  sessions  agents        out-tokens  recurring prompt
+4  4         codex+claude  9,875       ok whats the next step to do this
+2  2         claude        1,664       merge it with --admin i apprive
 ```
 
-Every report command also takes `--json` (machine-readable) and `--html [file]`
-(a styled, self-contained page — dark/light aware, shareable).
+That `content:` line is your **context tax** — over half of that session's input was
+harness-injected instructions, not conversation. And `distill` just told you which
+prompts you've paid for four times.
 
-`asa list` groups by each session's real cwd (read from the file headers) and ends
-with an **Orphans** section — sessions whose directory no longer exists (deleted
-worktrees, dev-slot clones).
+Then run **`asa setup`** once: an environment report plus three independently
+confirmed opt-in steps — raise Claude's transcript retention
+(`cleanupPeriodDays` defaults to 30 days, the ceiling on every longitudinal
+feature), install per-prompt git tracing into the current repo, and colocate jj
+for op-log snapshots of agent edits.
 
-## Act
+## Commands
 
-```sh
-asa resume -c <id>              # wraps `claude --resume` in the session's original cwd
-asa resume -o <id> -p "..."     # headless via `codex exec resume`
-asa fork -c <id>                # whole-session fork (`--fork-session`) — codex: wraps `codex fork`
-asa fork -c|-o <id> --at <stepId> # fork AT a step, either agent (see the demo above)
+Sessions are addressed with `-c/--claude <id>` or `-o/--codex <id>` (as in
+OpenAI); ids accept unique prefixes. Every report command also takes `--json`
+(machine-readable) and `--html [file]` (a styled, self-contained page —
+dark/light aware, shareable). `asa <command> --help` documents every flag, and
+`asa --help` ends with a use-case cookbook.
+
+| command | what it answers |
+|---|---|
+| `asa list` | what sessions do I have? — both agents, grouped by project, orphans flagged |
+| `asa analyze` | where did this session go? — tokens, steps, tools, MCP, subagents, content volume |
+| `asa compare` | what changed between these two? — metric deltas: original vs fork, or cross-agent |
+| `asa resume` | re-enter a session in its original cwd (wraps `claude --resume` / `codex resume`) |
+| `asa fork` | branch a session — whole-session, or `--at <stepId>` to fork mid-conversation |
+| `asa distill` | what should stop being typed by hand? — recurring prompts, questions, tool sequences; `--suggest` for model recommendations, `--faq` to write a dev-faq |
+| `asa prompter` | how do I prompt? — specificity, corrections, archetype, lint, workflow hygiene |
+| `asa project` | one repo's whole agent history — spend, steering, instruction surfaces |
+| `asa efficacy` | did my CLAUDE.md / AGENTS.md edits work? — steering metrics before vs after each commit |
+| `asa intents` | what do I use agents for? — intent mix per repo; `--deep` names recurring themes |
+| `asa models` | model archaeology — favorites, weekly dominance, era switches |
+| `asa setup` | onboarding: retention, git tracing, jj — each step confirmed separately |
+| `asa install-hooks` | per-prompt git tracing for one repo (what `setup` installs, standalone) |
+
+## Fork at a step
+
+Every step id in `asa analyze` output is a **time-travel point**:
+
+```console
+$ asa analyze -c 092aede3
+Steps (use the step id with `asa fork --at <id>`):
+#  step id                               api  tools  prompt
+1  025bf4c2-d128-49af-a193-cf09bcb5cf87  31   58     i need a plan to scaffold me…
+5  83421cf1-4fc4-48bb-a511-89a7bc34538d  1    0      how would one analyze the human prompter?…
+
+$ asa fork -c 092aede3 --at 83421cf1
+Forked 092aede3 at step 83421cf1 → session a2807c82-14aa-4ccd-b13b-98c4ef9de525
+  kept 461 records, dropped 281
+→ claude --resume a2807c82…   # re-enter the conversation as it was at step 5
+```
+
+The original session is untouched; the replayed prefix hits prompt cache. Then
+measure what the alternate timeline cost:
+
+```console
+$ asa compare -c 092aede3 -c a2807c82
+metric        A           B          Δ            Δ%
+steps         20          5          -15          -75%
+total tokens  39,278,156  8,031,034  -31,247,122  -80%
 ```
 
 **Fork at a step** is the feature neither CLI has: `--at` writes a truncated copy of
@@ -116,7 +124,55 @@ Resume a fork with a model whose context window fits it: a fork of a heavy sessi
 can exceed a smaller model's window (`--model haiku` on a 200k+ context replies
 "Prompt is too long").
 
-## Learn
+`asa resume` covers the non-fork cases: interactive re-entry in the session's
+original cwd, or headless (`asa resume -o <id> -p "continue"` wraps
+`codex exec resume` — scriptable).
+
+## Distill: stop typing it by hand
+
+`asa distill` mines recurring behavior across sessions — repeated procedures,
+questions, corrections, and tool sequences. Plain `distill` is fully local and
+deterministic (token-overlap clustering, no embeddings, no API calls):
+
+```console
+$ asa distill --since 60d
+Distill — 676 prompts across 34 sessions (12 claude, 22 codex), 12 projects
+
+Recurring procedures (skill candidates):
+×  sessions  agents        out-tokens  recurring prompt
+4  4         codex+claude  9,875       ok whats the next step to do this
+2  2         claude        17,081      merge in the renovate thing if thats already a pr also
+2  2         claude        1,664       merge it with --admin i apprive
+
+Recurring questions (FAQ / flashcard candidates):
+×  sessions  agents        out-tokens  recurring prompt
+4  3         codex+claude  18,886      what else can we build now before we do a release
+
+Recurring tool sequences (procedure evidence):
+×    sessions  sequence
+581  9         exec:gh → exec:gh
+314  12        exec:git → exec:git
+
+Command usage (skill = your extracted procedures; builtin = CLI-provided):
+command            kind     ×  sessions
+/boiltheocean      skill    3  2
+$session-closeout  skill    2  2
+```
+
+The `out-tokens` column is what each repetition has cost you so far — the case
+for extracting it. Two flags turn stats into artifacts:
+
+- **`--suggest claude|codex`** ships the digest to a model (your own account,
+  your own CLI) and prints extraction recommendations: skills to write,
+  CLAUDE.md rules, automations, retention gaps, prompting-vocabulary upgrades.
+  Gated behind a token estimate + your live quota + `proceed? [y/N]` (`--yes`
+  to skip). The prompt template is `packages/distill/src/suggest-template.ts`,
+  or bring your own with `--prompt-file`.
+- **`--faq [repo]`** writes `docs/dev-faq.md` for real: recurring questions with
+  answers extracted from your transcripts (you already paid for them),
+  edit-preserving on regeneration — hand-tuned answers survive.
+
+## Learn: the rest
 
 Full details for everything below: [docs/analysis.md](docs/analysis.md).
 
@@ -134,21 +190,6 @@ Lint:
   [warn] vague-filler: 2.1 vague fillers ("etc", "or something", "idk"…) per 10 prompts
       e.g. "i need a plan to scaffold me in this repo a typescript based claude code or codex…"
   [info] night-owl: 20% of prompts land between midnight and 5am local.
-```
-
-**`asa distill --since 60d`** — what should stop being typed by hand. Deterministic
-recurrence mining (prompt clusters, tool-sequence n-grams like `exec:gh → exec:gh`
-across 11 sessions), then `--suggest claude|codex` turns the stats into
-recommendations: skills to extract, CLAUDE.md rules, automations, flashcard-worthy
-retention gaps. And `--faq [repo]` writes `docs/dev-faq.md` for real: recurring
-questions with answers extracted from the transcripts (you already paid for
-them), edit-preserving on regeneration.
-
-```console
-Recurring procedures (skill candidates):
-×  sessions  recurring prompt
-3  3         commit and push to dev
-2  2         merge it with --admin i apprive
 ```
 
 **`asa project` / `asa efficacy` / `asa intents`** — repo-level meta. One repo's
