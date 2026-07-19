@@ -1,0 +1,44 @@
+name: publish
+
+# npm publish of @ak5/asa, triggered by release tags (v1.0.0-rc.5, v1.2.3).
+# Runs the same quality gates as CI first — a tag is not proof dev was green.
+# Needs the NPM_TOKEN repo secret (npm automation token for the @ak5 scope);
+# provenance ties the published tarball to this workflow run.
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+      - run: pnpm e2e:setup --synthetic
+      - run: pnpm test:e2e
+      - name: Check tag matches package version
+        run: |
+          PKG_VERSION=$(node -p "require('./packages/cli/package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::tag v$TAG_VERSION does not match packages/cli version $PKG_VERSION"
+            exit 1
+          fi
+      - name: Publish @ak5/asa
+        run: pnpm publish --access public --provenance --no-git-checks
+        working-directory: packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

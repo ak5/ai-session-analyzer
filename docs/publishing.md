@@ -27,7 +27,20 @@ npm i -g --prefix /tmp/asa-check <tarball>
 /tmp/asa-check/bin/asa --version && /tmp/asa-check/bin/asa list
 ```
 
-## Release (deliberately manual)
+## Release (CI on tags)
+
+Pushing a `v*` tag runs `.github/workflows/publish.yml`: full quality gates
+(build, unit, synthetic e2e), a tag ↔ `packages/cli` version match check, then
+`pnpm publish` with npm **provenance** — the published tarball is attested to
+the exact workflow run that built it.
+
+One-time setup: create an npm **automation token** for the `@ak5` scope
+(npmjs.com → Access Tokens) and add it as the `NPM_TOKEN` repo secret.
+
+So a release is: bump `packages/cli` version → release PR dev → main → merge →
+`git tag v<version> && git push --tags`.
+
+## Release (manual fallback)
 
 1. `npm login` as the owner of the `@ak5` scope.
 2. `cd packages/cli && pnpm publish` — `prepublishOnly` gates on the full
