@@ -325,9 +325,12 @@ Examples:
           return;
         }
         const fork = await adapter.forkAtStep(ref.filePath, opts.at);
+        const subagentNote = fork.copiedSubagents
+          ? `, copied ${fork.copiedSubagents} subagent transcript${fork.copiedSubagents === 1 ? '' : 's'}`
+          : '';
         console.log(
           `Forked ${shortId(ref.id)} at step ${shortId(opts.at)} → session ${fork.newSessionId}` +
-            `\n  ${fork.newFilePath}\n  kept ${fork.keptRecords} records, dropped ${fork.droppedRecords}`,
+            `\n  ${fork.newFilePath}\n  kept ${fork.keptRecords} records, dropped ${fork.droppedRecords}${subagentNote}`,
         );
         if (!opts.launch) return;
         const { command, args } = adapter.resume(fork.newSessionId, opts.prompt);

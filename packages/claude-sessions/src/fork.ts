@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parseJsonl } from '@asa/core';
 import { isPromptRecord, type ClaudeRecord } from './records.js';
@@ -9,6 +9,8 @@ export interface ForkAtStepResult {
   newFilePath: string;
   keptRecords: number;
   droppedRecords: number;
+  /** subagent transcripts copied into the fork's session directory (Claude only) */
+  copiedSubagents?: number;
 }
 
 /**
@@ -57,10 +59,52 @@ export async function forkClaudeSessionAtStep(
   await writeFile(newFilePath, kept.map((r) => JSON.stringify(r)).join('\n') + '\n', {
     flag: 'wx',
   });
+  const copiedSubagents = await copySessionDir(filePath, newSessionId);
   return {
     newSessionId,
     newFilePath,
     keptRecords: kept.length,
     droppedRecords: records.length - cut,
+    copiedSubagents,
   };
+}
+
+/**
+ * Copy the session's sidecar directory (`<sessionId>/`) into the fork:
+ * `subagents/agent-*.jsonl` transcripts (Task-tool history the main transcript
+ * references) with their sessionId rewritten to the fork's, plus their
+ * `.meta.json` and any `tool-results/` payloads verbatim. Returns the number
+ * of subagent transcripts copied; 0 when the session has no sidecar dir.
+ */
+async function copySessionDir(filePath: string, newSessionId: string): Promise<number> {
+  const base = dirname(filePath);
+  const oldDir = join(base, filePath.slice(base.length + 1).replace(/\.jsonl$/, ''));
+  const newDir = join(base, newSessionId);
+  let copied = 0;
+  for (const sub of ['subagents', 'tool-results']) {
+    let entries: string[];
+    try {
+      entries = await readdir(join(oldDir, sub));
+    } catch {
+      continue; // sidecar dir absent — nothing to copy
+    }
+    await mkdir(join(newDir, sub), { recursive: true });
+    for (const name of entries) {
+      const src = join(oldDir, sub, name);
+      const dest = join(newDir, sub, name);
+      if (sub === 'subagents' && name.endsWith('.jsonl')) {
+        const rewritten = parseJsonl<ClaudeRecord>(await readFile(src, 'utf8')).map((r) => {
+          const clone: ClaudeRecord = { ...r };
+          if ('sessionId' in clone) clone.sessionId = newSessionId;
+          if ('session_id' in clone) clone.session_id = newSessionId;
+          return clone;
+        });
+        await writeFile(dest, rewritten.map((r) => JSON.stringify(r)).join('\n') + '\n');
+        copied++;
+      } else {
+        await copyFile(src, dest);
+      }
+    }
+  }
+  return copied;
 }

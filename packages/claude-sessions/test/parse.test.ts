@@ -367,4 +367,45 @@ describe('forkClaudeSessionAtStep', () => {
     await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
     await expect(forkClaudeSessionAtStep(filePath, 'nope')).rejects.toThrow(/No record with uuid/);
   });
+
+  it('copies subagent transcripts and tool-results into the fork, rewriting sessionId', async () => {
+    const { mkdir } = await import('node:fs/promises');
+    const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    await mkdir(join(dir, SESSION_ID, 'subagents'), { recursive: true });
+    await mkdir(join(dir, SESSION_ID, 'tool-results'), { recursive: true });
+    await writeFile(
+      join(dir, SESSION_ID, 'subagents', 'agent-abc123.jsonl'),
+      JSON.stringify({ uuid: 's1', sessionId: SESSION_ID, agentId: 'abc123', type: 'user' }) + '\n',
+    );
+    await writeFile(
+      join(dir, SESSION_ID, 'subagents', 'agent-abc123.meta.json'),
+      JSON.stringify({ agentType: 'Explore', toolUseId: 'toolu_1' }),
+    );
+    await writeFile(join(dir, SESSION_ID, 'tool-results', 'toolu_1.txt'), 'big output');
+
+    const fork = await forkClaudeSessionAtStep(filePath, 'u1');
+    expect(fork.copiedSubagents).toBe(1);
+    const sub = parseJsonl<ClaudeRecord>(
+      await readFile(join(dir, fork.newSessionId, 'subagents', 'agent-abc123.jsonl'), 'utf8'),
+    );
+    expect(sub[0]!.sessionId).toBe(fork.newSessionId);
+    expect(
+      JSON.parse(
+        await readFile(join(dir, fork.newSessionId, 'subagents', 'agent-abc123.meta.json'), 'utf8'),
+      ).agentType,
+    ).toBe('Explore');
+    expect(await readFile(join(dir, fork.newSessionId, 'tool-results', 'toolu_1.txt'), 'utf8')).toBe(
+      'big output',
+    );
+  });
+
+  it('reports zero copied subagents when the session has no sidecar dir', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    const fork = await forkClaudeSessionAtStep(filePath, 'u1');
+    expect(fork.copiedSubagents).toBe(0);
+  });
 });
