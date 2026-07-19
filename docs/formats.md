@@ -40,6 +40,15 @@ conversation records: `uuid`, `parentUuid` (the DAG), `sessionId`, `cwd`, `gitBr
   LLM-written summary (a ~15k-char structured *paraphrase*; the literal prompts
   are gone). All pre-compact records stay in the file; the live context after
   compaction is summary + preserved segment + post-boundary records.
+- `/compact <hint>` mechanism (tested via an A/B on identical fork pairs — see
+  `asa fork --at`): the CLI appends a summarization instruction (with the hint
+  as custom instructions) to the conversation as a user message and has the
+  session's model write the summary — works headless (`claude -p --resume <id>
+  "/compact <hint>"`, stdout empty, boundary+summary appended). The hint biases
+  section *content* — hinted topics dominate "Key Technical Concepts" and
+  "Current Work", de-hinted facts get dropped from them entirely — but the
+  9-section template itself is fixed. In one observed run the internal
+  instruction leaked into the summary's own "All user messages" section.
 - No cumulative totals stored anywhere; no persistent sessionId→project index
   (`~/.claude/sessions/<pid>.json` covers live processes only — glob otherwise).
 

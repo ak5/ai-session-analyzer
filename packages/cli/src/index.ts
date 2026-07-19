@@ -281,6 +281,7 @@ addSelectorOptions(
   .option('--at <stepId>', 'step id (from `asa analyze`) to fork at, where supported')
   .option('--context', 'craft an optimized context instead of copying the transcript (see notes)')
   .option('--keep <n>', 'with --context: steps kept verbatim at the tail', '2')
+  .option('--hint <text>', 'with --context: focus hint, like /compact <instructions> — steps matching it keep 4× detail')
   .option('-p, --prompt <prompt>', 'run headless with this prompt instead of interactively')
   .option('--no-launch', 'only create the fork, do not launch the agent CLI')
   .option('--dry-run', 'print the command instead of running it')
@@ -316,6 +317,7 @@ Examples:
         at?: string;
         context?: boolean;
         keep: string;
+        hint?: string;
         prompt?: string;
         launch: boolean;
         dryRun?: boolean;
@@ -338,7 +340,10 @@ Examples:
           );
           return;
         }
-        const fork = await adapter.forkContext(ref.filePath, { keepLastSteps: Number(opts.keep) });
+        const fork = await adapter.forkContext(ref.filePath, {
+          keepLastSteps: Number(opts.keep),
+          hint: opts.hint,
+        });
         const subagentNote = fork.copiedSubagents
           ? `, copied ${fork.copiedSubagents} subagent transcript${fork.copiedSubagents === 1 ? '' : 's'}`
           : '';

@@ -48,7 +48,10 @@ export interface AgentAdapter {
   /** Present when the agent supports forking at a step (transcript truncation). */
   forkAtStep?(filePath: string, stepId: string): Promise<ForkAtStepResult>;
   /** Present when the agent supports crafted-context forks (`fork --context`). */
-  forkContext?(filePath: string, opts: { keepLastSteps?: number }): Promise<ContextForkResult>;
+  forkContext?(
+    filePath: string,
+    opts: { keepLastSteps?: number; hint?: string },
+  ): Promise<ContextForkResult>;
 }
 
 const claudeAgent: AgentAdapter = {

@@ -8,3 +8,4 @@ dist/
 .e2e/
 .asa/
 asa-*.html
+tmp/

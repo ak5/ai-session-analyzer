@@ -18,6 +18,21 @@ export interface ContextDigestOptions {
   maxResponseChars?: number;
   /** Steps whose full detail is skipped because they are kept verbatim in the fork. */
   skipStepIds?: Set<string>;
+  /**
+   * Focus hint, like `/compact <instructions>`: stated in the digest header,
+   * and steps matching it keep 4× the response excerpt while non-matching
+   * steps get half — deterministic keyword weighting, not a model call.
+   */
+  hint?: string;
+}
+
+function hintTokens(hint: string): string[] {
+  return [...new Set(hint.toLowerCase().split(/[^a-z0-9_./-]+/).filter((t) => t.length > 2))];
+}
+
+function matchesHint(tokens: string[], ...texts: (string | undefined)[]): boolean {
+  const haystack = texts.filter(Boolean).join(' ').toLowerCase();
+  return tokens.some((t) => haystack.includes(t));
 }
 
 /** Reads the assistant's final text for a step (agent-specific implementations). */
@@ -67,6 +82,11 @@ export async function buildContextDigest(
     'Below is the verbatim record of what the human asked and how each step concluded — ' +
       'trust it over memory, and re-read files before editing them: tool outputs were dropped.',
   );
+  const hint = options.hint?.trim();
+  const tokens = hint ? hintTokens(hint) : [];
+  if (hint) {
+    out.push('', `Focus for this continuation (per the fork's hint): ${hint}`);
+  }
 
   out.push('', '## The prompts, verbatim');
   for (const step of steps) {
@@ -81,7 +101,13 @@ export async function buildContextDigest(
   for (const step of steps) {
     const response = await readResponse(step.id);
     if (!response) continue;
-    out.push(`${step.index + 1}. ${cap(response, maxResponse)}`);
+    let budget = maxResponse;
+    if (tokens.length) {
+      budget = matchesHint(tokens, step.promptText, response)
+        ? maxResponse * 4
+        : Math.ceil(maxResponse / 2);
+    }
+    out.push(`${step.index + 1}. ${cap(response, budget)}`);
   }
 
   const files = fileTouches(steps);

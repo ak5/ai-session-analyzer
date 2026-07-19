@@ -145,7 +145,11 @@ history instead — mimicking each agent's own post-compaction transcript shape,
 with a deterministic digest: **every prompt verbatim, each step's concluding
 response, files touched** — while dropping tool results and harness bulk (typically
 99% of content). Instant, zero tokens spent, inspectable in the transcript, and the
-original session is untouched. `--keep N` holds the last N steps fully verbatim.
+original session is untouched. `--keep N` holds the last N steps fully verbatim, and
+`--hint "<focus>"` works like `/compact <instructions>` — except deterministically:
+matching steps keep 4× the concluding-response detail, non-matching get half, and
+prompts stay verbatim either way (native compact's hint can drop de-emphasized
+facts from the summary entirely — we tested it A/B on identical fork pairs).
 
 Live proof, both agents: a 307M-token Claude session crafted to ~8.5k tokens of
 context — the resumed fork *quoted the user's exact words from step 8 of 50*
