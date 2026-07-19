@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { loadPricing, previewText, renderHtmlReport, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
+import { formatNumber, loadPricing, previewText, renderHtmlReport, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
 import { analyzeSession, compareReports, renderComparison, renderReport } from '@asa/analyze';
 import {
   listInstalledClaudeCommands,
@@ -279,6 +279,8 @@ addSelectorOptions(
     ),
 )
   .option('--at <stepId>', 'step id (from `asa analyze`) to fork at, where supported')
+  .option('--context', 'craft an optimized context instead of copying the transcript (see notes)')
+  .option('--keep <n>', 'with --context: steps kept verbatim at the tail', '2')
   .option('-p, --prompt <prompt>', 'run headless with this prompt instead of interactively')
   .option('--no-launch', 'only create the fork, do not launch the agent CLI')
   .option('--dry-run', 'print the command instead of running it')
@@ -288,21 +290,32 @@ addSelectorOptions(
 Notes:
   --at writes a truncated transcript copy under a fresh session id (original
   untouched) and resumes it — re-entering the conversation at that step with the
-  warmed-up context. Claude Code accepts such transcripts today, but it is not a
-  stable contract: treat step-forks as disposable. Fork subagent transcripts are
-  not copied.
+  warmed-up context. Claude subagent transcripts and tool-results are copied
+  along. Claude Code accepts such transcripts today, but it is not a stable
+  contract: treat step-forks as disposable.
+
+  --context crafts the fork's history instead of copying it, mimicking each
+  agent's own post-compaction transcript shape but with a deterministic digest:
+  every prompt verbatim, each step's concluding response, files touched — while
+  dropping tool results and harness bulk. Unlike native /compact this is
+  instant, costs zero tokens (no summarization call), keeps your literal words
+  instead of a paraphrase, and leaves the original session intact. --keep N
+  controls how many recent steps stay verbatim (default 2).
 
 Examples:
   $ asa fork -c 092aede3                    # whole-session fork
   $ asa fork -c 092aede3 --at <stepId>      # fork at a step
+  $ asa fork -c 092aede3 --context          # crafted-context fork (compact, but yours)
+  $ asa fork -o 019f7575 --context --keep 4 # codex, more verbatim tail
   $ asa fork -c 092aede3 --at <stepId> -p "try approach B instead"
-  $ asa fork -c 092aede3 --at <stepId> --no-launch   # just create it
 `,
   )
   .action(
     async (
       opts: SelectorOpts & {
         at?: string;
+        context?: boolean;
+        keep: string;
         prompt?: string;
         launch: boolean;
         dryRun?: boolean;
@@ -311,6 +324,35 @@ Examples:
       const { adapter, ref } = await resolveSession(opts);
       const session = await adapter.load(ref.filePath);
       const spawnOpts = { cwd: session.cwd, dryRun: opts.dryRun };
+
+      if (opts.context) {
+        if (!adapter.forkContext) {
+          const supported = AGENTS.filter((a) => a.forkContext).map((a) => a.kind).join(', ');
+          throw new Error(`--context is not supported for ${adapter.kind} sessions yet (only: ${supported})`);
+        }
+        if (opts.at) throw new Error('--context and --at are mutually exclusive (context forks always span the whole session)');
+        if (opts.dryRun) {
+          console.log(
+            `[dry-run] would craft a context fork of ${shortId(ref.id)}: digest of all steps` +
+              ` (prompts verbatim + conclusions + files touched) with the last ${opts.keep} steps kept verbatim, then resume it`,
+          );
+          return;
+        }
+        const fork = await adapter.forkContext(ref.filePath, { keepLastSteps: Number(opts.keep) });
+        const subagentNote = fork.copiedSubagents
+          ? `, copied ${fork.copiedSubagents} subagent transcript${fork.copiedSubagents === 1 ? '' : 's'}`
+          : '';
+        console.log(
+          `Crafted context fork of ${shortId(ref.id)} → session ${fork.newSessionId}` +
+            `\n  ${fork.newFilePath}` +
+            `\n  ${fork.digestedSteps} steps digested (${formatNumber(fork.digestChars)} chars), ${fork.keptSteps} kept verbatim${subagentNote}` +
+            `\n  est. context ~${formatNumber(fork.estPostTokens)} tokens (session was ${formatNumber(session.usage.totalTokens)})`,
+        );
+        if (!opts.launch) return;
+        const { command, args } = adapter.resume(fork.newSessionId, opts.prompt);
+        process.exitCode = await spawnAgentCli(command, args, spawnOpts);
+        return;
+      }
 
       if (opts.at) {
         if (!adapter.forkAtStep) {

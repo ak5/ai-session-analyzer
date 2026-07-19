@@ -9,14 +9,17 @@
  */
 import type { AgentKind, NormalizedSession, SessionRef } from '@asa/core';
 import {
+  craftClaudeContextFork,
   findClaudeSession,
   forkClaudeSessionAtStep,
   listClaudeSessions,
   loadClaudeSession,
   readClaudeSessionCwd,
+  type ContextForkResult,
   type ForkAtStepResult,
 } from '@asa/claude-sessions';
 import {
+  craftCodexContextFork,
   findCodexSession,
   forkCodexSessionAtStep,
   listCodexSessions,
@@ -44,6 +47,8 @@ export interface AgentAdapter {
   fork(id: string, prompt?: string): CliInvocation;
   /** Present when the agent supports forking at a step (transcript truncation). */
   forkAtStep?(filePath: string, stepId: string): Promise<ForkAtStepResult>;
+  /** Present when the agent supports crafted-context forks (`fork --context`). */
+  forkContext?(filePath: string, opts: { keepLastSteps?: number }): Promise<ContextForkResult>;
 }
 
 const claudeAgent: AgentAdapter = {
@@ -65,6 +70,7 @@ const claudeAgent: AgentAdapter = {
       : ['--resume', id, '--fork-session'],
   }),
   forkAtStep: forkClaudeSessionAtStep,
+  forkContext: craftClaudeContextFork,
 };
 
 // -o as in OpenAI: -c was taken and codex/claude collide on every other letter.
@@ -82,6 +88,7 @@ const codexAgent: AgentAdapter = {
   }),
   fork: (id, prompt) => ({ command: 'codex', args: prompt ? ['fork', id, prompt] : ['fork', id] }),
   forkAtStep: forkCodexSessionAtStep,
+  forkContext: craftCodexContextFork,
 };
 
 export const AGENTS: AgentAdapter[] = [claudeAgent, codexAgent];

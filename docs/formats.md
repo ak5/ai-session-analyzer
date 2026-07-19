@@ -29,8 +29,17 @@ conversation records: `uuid`, `parentUuid` (the DAG), `sessionId`, `cwd`, `gitBr
   `[Request interrupted…]` (user interrupt), `<command-name>/<command-args>` (slash
   command invocation), `<local-command-stdout>` (command output echo),
   `<system-reminder>`/`<task-notification>` (harness-injected context).
-- Compaction: a `user` record with `isCompactSummary:true` + `compactMetadata`
-  (`trigger`, `preTokens`, `preservedSegment{headUuid,anchorUuid,tailUuid}`).
+- Compaction (dissected live for `asa fork --context`): a `system` record with
+  `subtype:"compact_boundary"` carrying `compactMetadata` — `trigger`
+  (manual|auto), `preTokens`/`postTokens` (observed: ~977k → ~18k, 98% dropped),
+  `durationMs` (~2 min: it's a billed full-context summarization call),
+  `preservedSegment{headUuid,anchorUuid,tailUuid}` + `preservedMessages` (a small
+  set of recent messages kept verbatim), `preCompactDiscoveredTools`,
+  `cumulativeDroppedTokens` — followed by a `user` record with
+  `isCompactSummary:true` + `isVisibleInTranscriptOnly:true` whose content is the
+  LLM-written summary (a ~15k-char structured *paraphrase*; the literal prompts
+  are gone). All pre-compact records stay in the file; the live context after
+  compaction is summary + preserved segment + post-boundary records.
 - No cumulative totals stored anywhere; no persistent sessionId→project index
   (`~/.claude/sessions/<pid>.json` covers live processes only — glob otherwise).
 
@@ -60,6 +69,17 @@ forks/subagents, `thread_source: user|subagent`), `turn_context` (per-turn `mode
   (`duration_ms`); user text arrives as `user_message` events.
 - Subagents get their own rollout file (`thread_source:"subagent"`,
   `source.subagent.thread_spawn.parent_thread_id`).
+- Compaction (dissected live for `asa fork --context`): a `compacted` record whose
+  `replacement_history` REPLACES the model-visible history — the real user
+  prompts verbatim (accumulating across successive compactions) plus one
+  `{type:"compaction", encrypted_content:"gAAAA…"}` bridge item: the summary is
+  server-side encrypted state and cannot be read or forged. Codex keeping
+  prompts verbatim is the design cue `fork --context` borrows.
+- Resume rebuilds the model-visible history from `response_item` lines, NOT from
+  `event_msg` (that's the UI stream) — verified live: a synthetic `compacted`
+  record at the head of a crafted rollout is ignored, while plain
+  `response_item` messages load fine. `codex exec resume` needs the FULL session
+  id — an unknown/short id silently starts a fresh session instead of erroring.
 
 ## CLI surface used by `asa`
 

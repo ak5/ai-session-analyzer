@@ -1,3 +1,4 @@
+export * from './context-digest.js';
 export * from './pricing.js';
 
 export type AgentKind = 'claude' | 'codex';

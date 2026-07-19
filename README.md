@@ -75,7 +75,7 @@ dark/light aware, shareable). `asa <command> --help` documents every flag, and
 | `asa analyze` | where did this session go? — tokens, steps, tools, MCP, subagents, content volume |
 | `asa compare` | what changed between these two? — metric deltas: original vs fork, or cross-agent |
 | `asa resume` | re-enter a session in its original cwd (wraps `claude --resume` / `codex resume`) |
-| `asa fork` | branch a session — whole-session, or `--at <stepId>` to fork mid-conversation |
+| `asa fork` | branch a session — whole-session, `--at <stepId>` mid-conversation, or `--context` for a crafted-context fork |
 | `asa distill` | what should stop being typed by hand? — recurring prompts, questions, tool sequences; `--suggest` for model recommendations, `--faq` to write a dev-faq |
 | `asa prompter` | how do I prompt? — specificity, corrections, archetype, lint, workflow hygiene |
 | `asa project` | one repo's whole agent history — spend, steering, instruction surfaces |
@@ -134,6 +134,26 @@ can exceed a smaller model's window (`--model haiku` on a 200k+ context replies
 `asa resume` covers the non-fork cases: interactive re-entry in the session's
 original cwd, or headless (`asa resume -o <id> -p "continue"` wraps
 `codex exec resume` — scriptable).
+
+## Fork with a crafted context (beat /compact at its own game)
+
+Native compaction is a lossy paraphrase: Claude's `/compact` spends a ~2-minute
+full-context summarization call (~1M billed tokens) to shrink ~977k → ~18k,
+throwing away your literal words; Codex keeps your prompts verbatim but hides its
+bridge summary in an encrypted blob. `asa fork -c <id> --context` crafts the fork's
+history instead — mimicking each agent's own post-compaction transcript shape, but
+with a deterministic digest: **every prompt verbatim, each step's concluding
+response, files touched** — while dropping tool results and harness bulk (typically
+99% of content). Instant, zero tokens spent, inspectable in the transcript, and the
+original session is untouched. `--keep N` holds the last N steps fully verbatim.
+
+Live proof, both agents: a 307M-token Claude session crafted to ~8.5k tokens of
+context — the resumed fork *quoted the user's exact words from step 8 of 50*
+("we can call it ensure-plugins or something and it can be idempotent…"), which the
+session's own native compact summary had paraphrased away. Same on Codex: a 9.1M-token
+session's crafted fork recalled a verbatim quote, a repo name, and a typo'd path
+from digested steps. Same stability caveat as `--at`: crafted transcripts rely on
+resume accepting external files — treat forks as disposable.
 
 ## Distill: stop typing it by hand
 

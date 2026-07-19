@@ -76,7 +76,7 @@ export async function forkClaudeSessionAtStep(
  * `.meta.json` and any `tool-results/` payloads verbatim. Returns the number
  * of subagent transcripts copied; 0 when the session has no sidecar dir.
  */
-async function copySessionDir(filePath: string, newSessionId: string): Promise<number> {
+export async function copySessionDir(filePath: string, newSessionId: string): Promise<number> {
   const base = dirname(filePath);
   const oldDir = join(base, filePath.slice(base.length + 1).replace(/\.jsonl$/, ''));
   const newDir = join(base, newSessionId);
