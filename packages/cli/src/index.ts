@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { previewText, renderHtmlReport, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
+import { loadPricing, previewText, renderHtmlReport, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
 import { analyzeSession, compareReports, renderComparison, renderReport } from '@asa/analyze';
 import {
   listInstalledClaudeCommands,
@@ -250,7 +250,7 @@ addSelectorOptions(
   .option('--html [file]', 'write the report as a styled HTML page')
   .action(async (opts: SelectorOpts & { json?: boolean; html?: boolean | string }) => {
     const { adapter, ref } = await resolveSession(opts);
-    const report = analyzeSession(await adapter.load(ref.filePath));
+    const report = analyzeSession(await adapter.load(ref.filePath), loadPricing());
     await deliver('analyze', `session ${shortId(report.session.id)} — ${report.session.title ?? report.session.agent}`, renderReport(report), report, opts);
   });
 
@@ -619,11 +619,12 @@ Order: A = first id given (claude ids first), B = second.
     if (selectors.length !== 2) {
       throw new Error(`compare needs exactly two session ids (got ${selectors.length}) — e.g. asa compare -c <a> -c <b>`);
     }
+    const pricing = loadPricing();
     const reports = await Promise.all(
       selectors.map(async ({ agent, id }) => {
         const ref = await agent.find(id);
         if (!ref) throw new Error(`No ${agent.kind} session matching "${id}"`);
-        return analyzeSession(await agent.load(ref.filePath));
+        return analyzeSession(await agent.load(ref.filePath), pricing);
       }),
     );
     const [a, b] = reports;

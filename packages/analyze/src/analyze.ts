@@ -1,4 +1,4 @@
-import type { NormalizedSession, ToolCall } from '@asa/core';
+import { estimateSessionCost, type CostEstimate, type NormalizedSession, type PricingTable, type ToolCall } from '@asa/core';
 
 export interface ToolStat {
   name: string;
@@ -26,13 +26,15 @@ export interface AnalysisReport {
   };
   toolStats: ToolStat[];
   mcpServers: McpServerStat[];
+  /** API-equivalent cost estimate; absent when the session names no models. */
+  cost?: CostEstimate;
 }
 
 function allToolCalls(session: NormalizedSession): ToolCall[] {
   return session.steps.flatMap((s) => s.toolCalls);
 }
 
-export function analyzeSession(session: NormalizedSession): AnalysisReport {
+export function analyzeSession(session: NormalizedSession, pricing?: PricingTable): AnalysisReport {
   const calls = allToolCalls(session);
   const byName = new Map<string, ToolStat>();
   const byServer = new Map<string, number>();
@@ -70,5 +72,6 @@ export function analyzeSession(session: NormalizedSession): AnalysisReport {
     mcpServers: [...byServer.entries()]
       .map(([server, count]) => ({ server, calls: count }))
       .sort((a, b) => b.calls - a.calls),
+    cost: estimateSessionCost(session, pricing),
   };
 }

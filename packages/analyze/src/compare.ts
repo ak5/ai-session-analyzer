@@ -5,6 +5,8 @@ export interface ComparisonRow {
   metric: string;
   a: number;
   b: number;
+  /** Render as dollars (2dp) instead of an integer count. */
+  usd?: boolean;
 }
 
 export function compareReports(a: AnalysisReport, b: AnalysisReport): ComparisonRow[] {
@@ -28,6 +30,9 @@ export function compareReports(a: AnalysisReport, b: AnalysisReport): Comparison
     row('cache-read tokens', a.session.usage.cacheReadTokens, b.session.usage.cacheReadTokens),
     row('cache-write tokens', a.session.usage.cacheCreationTokens, b.session.usage.cacheCreationTokens),
     row('total tokens', a.session.usage.totalTokens, b.session.usage.totalTokens),
+    ...(a.cost?.pricedModels.length || b.cost?.pricedModels.length
+      ? [{ metric: 'est. cost (USD)', a: a.cost?.usd ?? 0, b: b.cost?.usd ?? 0, usd: true }]
+      : []),
   ];
 }
 
@@ -42,7 +47,8 @@ export function renderComparison(a: AnalysisReport, b: AnalysisReport): string {
       rows.map((r) => {
         const delta = r.b - r.a;
         const pct = r.a === 0 ? (r.b === 0 ? '0%' : '—') : `${((delta / r.a) * 100).toFixed(0)}%`;
-        return [r.metric, fmt(r.a), fmt(r.b), `${delta > 0 ? '+' : ''}${fmt(delta)}`, pct];
+        const val = (n: number) => (r.usd ? n.toFixed(2) : fmt(n));
+        return [r.metric, val(r.a), val(r.b), `${delta > 0 ? '+' : ''}${val(delta)}`, pct];
       }),
     ),
   );

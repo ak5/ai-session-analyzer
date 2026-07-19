@@ -1,3 +1,5 @@
+export * from './pricing.js';
+
 export type AgentKind = 'claude' | 'codex';
 
 export interface UsageTotals {

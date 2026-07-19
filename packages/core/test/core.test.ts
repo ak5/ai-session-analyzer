@@ -105,3 +105,101 @@ describe('shortId', () => {
     expect(shortId('019f6fe1-5809-73f1-a4e3-478b31e04834')).toBe('019f6fe1');
   });
 });
+
+describe('pricing', () => {
+  it('resolves models by longest prefix after stripping dates and effort suffixes', async () => {
+    const { BUILTIN_PRICING, resolveModelRates } = await import('../src/pricing.js');
+    expect(resolveModelRates('claude-haiku-4-5-20251001', BUILTIN_PRICING)?.output).toBe(5);
+    expect(resolveModelRates('gpt-5.1-codex (high)', BUILTIN_PRICING)?.input).toBe(1.25);
+    // gpt-5.1 must not swallow gpt-5.1-codex's slot, and vice versa
+    expect(resolveModelRates('gpt-5.1', BUILTIN_PRICING)).toBe(BUILTIN_PRICING['gpt-5.1']);
+    expect(resolveModelRates('claude-fable-5', BUILTIN_PRICING)).toBeUndefined();
+    // unknown minor versions must not be priced by a shorter prefix
+    expect(resolveModelRates('gpt-5.6-sol (low)', BUILTIN_PRICING)).toBeUndefined();
+  });
+
+  it('prices a claude session: input excludes cache, write billed separately', async () => {
+    const { estimateSessionCost } = await import('../src/pricing.js');
+    const cost = estimateSessionCost({
+      agent: 'claude',
+      models: ['claude-haiku-4-5'],
+      modelUsage: { 'claude-haiku-4-5': { apiCalls: 2, outputTokens: 1_000_000 } },
+      usage: {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        cacheReadTokens: 10_000_000,
+        cacheCreationTokens: 1_000_000,
+        reasoningTokens: 0,
+        totalTokens: 13_000_000,
+      },
+    })!;
+    // 1M in @$1 + 1M out @$5 + 10M cache-read @$0.10 + 1M cache-write @$1.25
+    expect(cost.usd).toBeCloseTo(1 + 5 + 1 + 1.25, 5);
+    expect(cost.pricedModels).toEqual(['claude-haiku-4-5']);
+  });
+
+  it('prices a codex session: cached subset comes out of inputTokens', async () => {
+    const { estimateSessionCost } = await import('../src/pricing.js');
+    const cost = estimateSessionCost({
+      agent: 'codex',
+      models: ['gpt-5.1-codex'],
+      modelUsage: { 'gpt-5.1-codex (medium)': { apiCalls: 1, outputTokens: 1_000_000 } },
+      usage: {
+        inputTokens: 5_000_000,
+        outputTokens: 1_000_000,
+        cacheReadTokens: 4_000_000,
+        cacheCreationTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 6_000_000,
+      },
+    })!;
+    // 1M uncached in @$1.25 + 1M out @$10 + 4M cached @$0.125
+    expect(cost.usd).toBeCloseTo(1.25 + 10 + 0.5, 5);
+  });
+
+  it('splits multi-model sessions by output share and names unpriced models', async () => {
+    const { estimateSessionCost } = await import('../src/pricing.js');
+    const cost = estimateSessionCost({
+      agent: 'claude',
+      models: ['claude-haiku-4-5', 'claude-fable-5'],
+      modelUsage: {
+        'claude-haiku-4-5': { apiCalls: 1, outputTokens: 1_000_000 },
+        'claude-fable-5': { apiCalls: 1, outputTokens: 3_000_000 },
+      },
+      usage: {
+        inputTokens: 4_000_000,
+        outputTokens: 4_000_000,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 8_000_000,
+      },
+    })!;
+    // haiku gets 25% of input (1M @$1) + its own 1M out @$5; fable-5 unpriced
+    expect(cost.usd).toBeCloseTo(1 + 5, 5);
+    expect(cost.unpricedModels).toEqual(['claude-fable-5']);
+  });
+
+  it('merges a user override file over the builtin table', async () => {
+    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { loadPricing, resolveModelRates } = await import('../src/pricing.js');
+    const dir = await mkdtemp(join(tmpdir(), 'asa-pricing-'));
+    const overridePath = join(dir, 'pricing.json');
+    await writeFile(overridePath, JSON.stringify({ 'claude-fable-5': { input: 20, output: 100 } }));
+    const table = loadPricing(overridePath);
+    expect(resolveModelRates('claude-fable-5', table)?.output).toBe(100);
+    expect(resolveModelRates('claude-haiku-4-5', table)?.output).toBe(5); // builtin survives
+    expect(loadPricing(join(dir, 'missing.json'))).toEqual(
+      (await import('../src/pricing.js')).BUILTIN_PRICING,
+    );
+  });
+
+  it('formatUsd keeps sub-cent costs meaningful', async () => {
+    const { formatUsd } = await import('../src/pricing.js');
+    expect(formatUsd(0)).toBe('$0');
+    expect(formatUsd(0.0042)).toBe('$0.0042');
+    expect(formatUsd(12.345)).toBe('$12.35');
+  });
+});

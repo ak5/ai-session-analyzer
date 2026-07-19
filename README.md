@@ -85,6 +85,13 @@ dark/light aware, shareable). `asa <command> --help` documents every flag, and
 | `asa setup` | onboarding: retention, git tracing, jj — each step confirmed separately |
 | `asa install-hooks` | per-prompt git tracing for one repo (what `setup` installs, standalone) |
 
+`analyze` and `compare` also estimate **API-equivalent cost** (`est. cost $27.35`)
+from published list prices — on a subscription your marginal cost is $0; this is
+what the same tokens would have cost via the API. Models missing from the builtin
+table are named, never guessed: add their rates to `~/.asa/pricing.json`
+(`{"claude-fable-5": {"input": 15, "output": 75, "cacheRead": 1.5, "cacheWrite": 18.75}}`,
+USD per million tokens) and they price everywhere.
+
 ## Fork at a step
 
 Every step id in `asa analyze` output is a **time-travel point**:
@@ -270,8 +277,6 @@ Bundling rationale, tarball verification, release steps:
   already holds every MCP call + result) — scored via `asa compare`
 - Codex per-turn git tracing (no hook surface upstream yet)
 - More agents via the adapter registry (OpenCode, Gemini CLI, Copilot CLI)
-- Cost estimation per model/pricing table
-- Copy Claude `subagents/` transcripts into forks
 - Desktop app / TUI on top of the analysis packages
 
 ## License
