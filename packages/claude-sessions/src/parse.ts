@@ -28,6 +28,31 @@ export async function readClaudeRecords(filePath: string): Promise<ClaudeRecord[
   return parseJsonl<ClaudeRecord>(await readFile(filePath, 'utf8'));
 }
 
+/**
+ * The assistant's text response to one step: text blocks from the step's
+ * record until the next real prompt (thinking and tool chatter skipped).
+ * Powers FAQ distillation — the answer was already paid for once.
+ */
+export async function readClaudeStepResponse(
+  filePath: string,
+  stepUuid: string,
+): Promise<string | undefined> {
+  const records = await readClaudeRecords(filePath);
+  const start = records.findIndex((r) => r.uuid === stepUuid);
+  if (start < 0) return undefined;
+  const parts: string[] = [];
+  for (let i = start + 1; i < records.length; i++) {
+    const record = records[i]!;
+    if (classifyUserRecord(record) === 'prompt' || classifyUserRecord(record) === 'command') break;
+    if (record.type !== 'assistant') continue;
+    for (const block of contentBlocks(record.message)) {
+      if (block.type === 'text' && typeof block.text === 'string') parts.push(block.text);
+    }
+  }
+  const text = parts.join('\n').trim();
+  return text || undefined;
+}
+
 /** The session's cwd from the file header, without loading the transcript. */
 export async function readClaudeSessionCwd(filePath: string): Promise<string | undefined> {
   for (const record of (await readFirstJsonlObjects(filePath, 8)) as ClaudeRecord[]) {

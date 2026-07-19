@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseJsonl } from '@asa/core';
 import { forkClaudeSessionAtStep } from '../src/fork.js';
-import { normalizeClaudeRecords, readClaudeSessionCwd } from '../src/parse.js';
+import { normalizeClaudeRecords, readClaudeSessionCwd, readClaudeStepResponse } from '../src/parse.js';
 import { annotateStepsWithGitTrace } from '../src/trace.js';
 import { parseClaudeUsageOutput } from '../src/usage.js';
 import type { ClaudeRecord } from '../src/records.js';
@@ -314,6 +314,17 @@ describe('parseClaudeUsageOutput', () => {
   });
 });
 
+describe('readClaudeStepResponse', () => {
+  it('collects assistant text for a step, stopping at the next prompt', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-resp-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    expect(await readClaudeStepResponse(filePath, 'u1')).toBe('thinking about it');
+    expect(await readClaudeStepResponse(filePath, 'u3')).toBe('done');
+    expect(await readClaudeStepResponse(filePath, 'nope')).toBeUndefined();
+  });
+});
+
 describe('readClaudeSessionCwd', () => {
   it('reads cwd from the header without needing the whole file', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
@@ -355,5 +366,46 @@ describe('forkClaudeSessionAtStep', () => {
     const filePath = join(dir, `${SESSION_ID}.jsonl`);
     await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
     await expect(forkClaudeSessionAtStep(filePath, 'nope')).rejects.toThrow(/No record with uuid/);
+  });
+
+  it('copies subagent transcripts and tool-results into the fork, rewriting sessionId', async () => {
+    const { mkdir } = await import('node:fs/promises');
+    const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    await mkdir(join(dir, SESSION_ID, 'subagents'), { recursive: true });
+    await mkdir(join(dir, SESSION_ID, 'tool-results'), { recursive: true });
+    await writeFile(
+      join(dir, SESSION_ID, 'subagents', 'agent-abc123.jsonl'),
+      JSON.stringify({ uuid: 's1', sessionId: SESSION_ID, agentId: 'abc123', type: 'user' }) + '\n',
+    );
+    await writeFile(
+      join(dir, SESSION_ID, 'subagents', 'agent-abc123.meta.json'),
+      JSON.stringify({ agentType: 'Explore', toolUseId: 'toolu_1' }),
+    );
+    await writeFile(join(dir, SESSION_ID, 'tool-results', 'toolu_1.txt'), 'big output');
+
+    const fork = await forkClaudeSessionAtStep(filePath, 'u1');
+    expect(fork.copiedSubagents).toBe(1);
+    const sub = parseJsonl<ClaudeRecord>(
+      await readFile(join(dir, fork.newSessionId, 'subagents', 'agent-abc123.jsonl'), 'utf8'),
+    );
+    expect(sub[0]!.sessionId).toBe(fork.newSessionId);
+    expect(
+      JSON.parse(
+        await readFile(join(dir, fork.newSessionId, 'subagents', 'agent-abc123.meta.json'), 'utf8'),
+      ).agentType,
+    ).toBe('Explore');
+    expect(await readFile(join(dir, fork.newSessionId, 'tool-results', 'toolu_1.txt'), 'utf8')).toBe(
+      'big output',
+    );
+  });
+
+  it('reports zero copied subagents when the session has no sidecar dir', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-test-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    const fork = await forkClaudeSessionAtStep(filePath, 'u1');
+    expect(fork.copiedSubagents).toBe(0);
   });
 });

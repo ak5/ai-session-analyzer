@@ -1,8 +1,12 @@
 import { Command } from 'commander';
-import { previewText, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
+import { loadPricing, previewText, renderHtmlReport, shortId, type NormalizedSession, type SessionRef } from '@asa/core';
 import { analyzeSession, compareReports, renderComparison, renderReport } from '@asa/analyze';
-import { listInstalledClaudeCommands, readClaudeStatsCache } from '@asa/claude-sessions';
-import { listInstalledCodexCommands } from '@asa/codex-sessions';
+import {
+  listInstalledClaudeCommands,
+  readClaudeStatsCache,
+  readClaudeStepResponse,
+} from '@asa/claude-sessions';
+import { listInstalledCodexCommands, readCodexStepResponse } from '@asa/codex-sessions';
 import {
   analyzePrompter,
   buildJudgePrompt,
@@ -14,10 +18,13 @@ import {
 } from '@asa/prompter';
 import {
   buildDistillStats,
+  buildFaqEntry,
   buildSuggestPrompt,
   isInternalSession,
+  mergeFaq,
   renderDistillStats,
   runSuggest,
+  type FaqEntry,
   type SuggestBackend,
 } from '@asa/distill';
 import { askYesNo, confirmModelCall } from './confirm.js';
@@ -163,8 +170,9 @@ Use cases:
     $ asa intents --deep claude                  # + model-named recurring themes, shipped or not
     $ asa models --since 60d                    # model favorites, weekly dominance, era switches
 
-  Feed a dashboard or jq pipeline
+  Feed a dashboard, browser, or jq pipeline
     $ asa analyze -c <id> --json | jq '.totals'
+    $ asa prompter --html && open asa-prompter.html   # any report: --html [file]
     $ asa prompter --json | jq '.skillCurve'
 `;
 
@@ -239,10 +247,11 @@ addSelectorOptions(
     .description('Analyze a session: tokens, steps, tool calls, MCP usage, subagents'),
 )
   .option('--json', 'output the full report as JSON')
-  .action(async (opts: SelectorOpts & { json?: boolean }) => {
+  .option('--html [file]', 'write the report as a styled HTML page')
+  .action(async (opts: SelectorOpts & { json?: boolean; html?: boolean | string }) => {
     const { adapter, ref } = await resolveSession(opts);
-    const report = analyzeSession(await adapter.load(ref.filePath));
-    console.log(opts.json ? JSON.stringify(report, null, 2) : renderReport(report));
+    const report = analyzeSession(await adapter.load(ref.filePath), loadPricing());
+    await deliver('analyze', `session ${shortId(report.session.id)} — ${report.session.title ?? report.session.agent}`, renderReport(report), report, opts);
   });
 
 addSelectorOptions(
@@ -316,9 +325,12 @@ Examples:
           return;
         }
         const fork = await adapter.forkAtStep(ref.filePath, opts.at);
+        const subagentNote = fork.copiedSubagents
+          ? `, copied ${fork.copiedSubagents} subagent transcript${fork.copiedSubagents === 1 ? '' : 's'}`
+          : '';
         console.log(
           `Forked ${shortId(ref.id)} at step ${shortId(opts.at)} → session ${fork.newSessionId}` +
-            `\n  ${fork.newFilePath}\n  kept ${fork.keptRecords} records, dropped ${fork.droppedRecords}`,
+            `\n  ${fork.newFilePath}\n  kept ${fork.keptRecords} records, dropped ${fork.droppedRecords}${subagentNote}`,
         );
         if (!opts.launch) return;
         const { command, args } = adapter.resume(fork.newSessionId, opts.prompt);
@@ -345,6 +357,7 @@ program
   .option('--yes', 'skip the token-estimate confirmation for --deep')
   .option('--model <model>', 'judge model for --deep', 'haiku')
   .option('--json', 'output the full report as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .addHelpText(
     'after',
     `
@@ -371,6 +384,7 @@ Examples:
       sample: string;
       model: string;
       json?: boolean;
+      html?: boolean | string;
     }) => {
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
@@ -404,15 +418,85 @@ Examples:
         }
       }
 
-      if (opts.json) {
-        console.log(JSON.stringify({ ...report, judge }, null, 2));
-      } else {
-        console.log(renderPrompterReport(report, judge));
-      }
+      await deliver('prompter', 'prompter report', renderPrompterReport(report, judge), { ...report, judge }, opts);
     },
   );
 
 const collect = (value: string, previous: string[] = []) => [...previous, value];
+
+/** Shared output tail for report commands: --json, --html [file], or text. */
+async function deliver(
+  command: string,
+  title: string,
+  text: string,
+  json: unknown,
+  opts: { json?: boolean; html?: boolean | string },
+): Promise<void> {
+  if (opts.json) {
+    console.log(JSON.stringify(json, null, 2));
+    return;
+  }
+  if (opts.html) {
+    const { writeFile } = await import('node:fs/promises');
+    const file = typeof opts.html === 'string' ? opts.html : `asa-${command}.html`;
+    await writeFile(file, renderHtmlReport({ title, command, body: text }));
+    console.log(`wrote ${file}`);
+    return;
+  }
+  console.log(text);
+}
+
+/** distill --faq: recurring questions in one repo's sessions + answers re-read from the transcripts. */
+async function writeFaq(repoRoot: string, limit: number): Promise<void> {
+  const { readFile, writeFile } = await import('node:fs/promises');
+  const sessions = await loadSessionsForRepo(repoRoot, limit);
+  if (!sessions.length) throw new Error(`No sessions found for ${repoRoot}`);
+  const stats = buildDistillStats(sessions);
+  if (!stats.questions.length) {
+    console.log(`No recurring questions across ${stats.scope.sessions} sessions in ${repoRoot} — nothing to distill yet.`);
+    return;
+  }
+
+  const byKind = new Map(AGENTS.map((a) => [a.kind as string, a]));
+  const entries: FaqEntry[] = [];
+  for (const cluster of stats.questions) {
+    // memberRefs are representative-first: prefer the answer to the exact
+    // phrasing shown as the entry's question over longer sibling answers
+    let best: { answer: string; sessionId: string } | undefined;
+    for (const ref of cluster.memberRefs) {
+      const adapter = byKind.get(ref.agent);
+      const sessionRef = await adapter?.find(ref.sessionId).catch(() => undefined);
+      if (!sessionRef) continue;
+      const answer =
+        ref.agent === 'claude'
+          ? await readClaudeStepResponse(sessionRef.filePath, ref.stepId).catch(() => undefined)
+          : await readCodexStepResponse(sessionRef.filePath, ref.stepId).catch(() => undefined);
+      if (answer) {
+        best = { answer, sessionId: ref.sessionId };
+        break;
+      }
+    }
+    if (best) entries.push(buildFaqEntry(cluster, best.answer, best.sessionId));
+    else console.error(`no extractable answer for: "${cluster.representative.slice(0, 60)}" — skipped`);
+  }
+  if (!entries.length) {
+    console.log('Recurring questions found, but no extractable answers survived — nothing written.');
+    return;
+  }
+
+  const faqPath = join(repoRoot, 'docs', 'dev-faq.md');
+  const existing = await readFile(faqPath, 'utf8').catch(() => undefined);
+  const merged = mergeFaq(existing, entries);
+  if (!merged.added.length) {
+    console.log(`docs/dev-faq.md already covers all ${merged.kept} recurring questions — unchanged.`);
+    return;
+  }
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(join(repoRoot, 'docs'), { recursive: true });
+  await writeFile(faqPath, merged.content);
+  console.log(`${faqPath}: added ${merged.added.length} entries${merged.kept ? `, kept ${merged.kept} existing untouched` : ''}`);
+  for (const q of merged.added) console.log(`  + ${q}`);
+}
 
 /** Sessions whose header cwd matches the repo (or lives under it). */
 async function loadSessionsForRepo(repoRoot: string, limit: number): Promise<NormalizedSession[]> {
@@ -427,7 +511,8 @@ program
   )
   .option('-n, --limit <n>', 'max sessions to scan (newest first)', '200')
   .option('--json', 'output the dossier as JSON')
-  .action(async (path: string | undefined, opts: { limit: string; json?: boolean }) => {
+  .option('--html [file]', 'write the dossier as a styled HTML page')
+  .action(async (path: string | undefined, opts: { limit: string; json?: boolean; html?: boolean | string }) => {
     const repoRoot = resolveRepoRoot(path ?? process.cwd());
     const sessions = await loadSessionsForRepo(repoRoot, Number(opts.limit));
     if (!sessions.length) throw new Error(`No sessions found for ${repoRoot}`);
@@ -446,13 +531,14 @@ program
   .option('-n, --limit <n>', 'max sessions to scan (newest first)', '200')
   .option('--window <k>', 'sessions per side of each change', '10')
   .option('--json', 'output entries as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .action(
-    async (path: string | undefined, opts: { limit: string; window: string; json?: boolean }) => {
+    async (path: string | undefined, opts: { limit: string; window: string; json?: boolean; html?: boolean | string }) => {
       const repoRoot = resolveRepoRoot(path ?? process.cwd());
       const changes = readInstructionChanges(repoRoot);
       const sessions = await loadSessionsForRepo(repoRoot, Number(opts.limit));
       const entries = computeEfficacy(changes, steeringSamples(sessions), Number(opts.window));
-      console.log(opts.json ? JSON.stringify(entries, null, 2) : renderEfficacy(entries));
+      await deliver('efficacy', `instruction efficacy — ${repoRoot}`, renderEfficacy(entries), entries, opts);
     },
   );
 
@@ -468,6 +554,7 @@ program
   .option('--yes', 'skip the token-estimate confirmation for --deep')
   .option('--model <model>', 'model for --deep claude')
   .option('--json', 'output the report as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .action(
     async (opts: {
       agent: string;
@@ -477,6 +564,7 @@ program
       yes?: boolean;
       model?: string;
       json?: boolean;
+      html?: boolean | string;
     }) => {
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
@@ -502,7 +590,7 @@ program
           }
         }
       }
-      console.log(opts.json ? JSON.stringify(report, null, 2) : renderIntents(report));
+      await deliver('intents', 'session intents', renderIntents(report), report, opts);
     },
   );
 
@@ -512,6 +600,7 @@ program
   .option('-c, --claude <id>', 'claude session id (repeatable)', collect, [])
   .option('-o, --codex <id>', 'codex session id (repeatable)', collect, [])
   .option('--json', 'output both reports and the comparison rows as JSON')
+  .option('--html [file]', 'write the comparison as a styled HTML page')
   .addHelpText(
     'after',
     `
@@ -521,7 +610,7 @@ Examples:
 Order: A = first id given (claude ids first), B = second.
 `,
   )
-  .action(async (opts: { claude: string[]; codex: string[]; json?: boolean }) => {
+  .action(async (opts: { claude: string[]; codex: string[]; json?: boolean; html?: boolean | string }) => {
     const byKind = (kind: string) => AGENTS.find((a) => a.kind === kind)!;
     const selectors = [
       ...opts.claude.map((id) => ({ agent: byKind('claude'), id })),
@@ -530,19 +619,22 @@ Order: A = first id given (claude ids first), B = second.
     if (selectors.length !== 2) {
       throw new Error(`compare needs exactly two session ids (got ${selectors.length}) — e.g. asa compare -c <a> -c <b>`);
     }
+    const pricing = loadPricing();
     const reports = await Promise.all(
       selectors.map(async ({ agent, id }) => {
         const ref = await agent.find(id);
         if (!ref) throw new Error(`No ${agent.kind} session matching "${id}"`);
-        return analyzeSession(await agent.load(ref.filePath));
+        return analyzeSession(await agent.load(ref.filePath), pricing);
       }),
     );
     const [a, b] = reports;
-    if (opts.json) {
-      console.log(JSON.stringify({ a, b, rows: compareReports(a!, b!) }, null, 2));
-    } else {
-      console.log(renderComparison(a!, b!));
-    }
+    await deliver(
+      'compare',
+      `compare ${shortId(a!.session.id)} vs ${shortId(b!.session.id)}`,
+      renderComparison(a!, b!),
+      { a, b, rows: compareReports(a!, b!) },
+      opts,
+    );
   });
 
 program
@@ -647,19 +739,16 @@ program
   .option('--since <when>', 'only sessions updated since, e.g. "30d" or "2026-06-01"')
   .option('--include-subagents', 'keep agent-spawned sessions')
   .option('--json', 'output the report as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .action(
-    async (opts: { agent: string; limit: string; since?: string; includeSubagents?: boolean; json?: boolean }) => {
+    async (opts: { agent: string; limit: string; since?: string; includeSubagents?: boolean; json?: boolean; html?: boolean | string }) => {
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
       const report = buildModelReport(sessions);
       const cache = await readClaudeStatsCache();
       const longRange = cache?.dailyModelTokens ? buildLongRangeHistory(cache.dailyModelTokens) : undefined;
-      if (opts.json) {
-        console.log(JSON.stringify({ ...report, longRange }, null, 2));
-      } else {
-        console.log(renderModelReport(report));
-        if (longRange) console.log('\n' + renderLongRangeHistory(longRange));
-      }
+      const text = renderModelReport(report) + (longRange ? '\n\n' + renderLongRangeHistory(longRange) : '');
+      await deliver('models', 'model usage history', text, { ...report, longRange }, opts);
     },
   );
 
@@ -676,10 +765,12 @@ program
     '--suggest <backend>',
     'ship the stats to a model (claude | codex) for extraction recommendations',
   )
+  .option('--faq [path]', 'write docs/dev-faq.md in the repo (default: cwd) from recurring questions + transcript answers')
   .option('--model <model>', 'model for --suggest claude (codex uses its configured default)')
   .option('--prompt-file <path>', 'override the suggest prompt template with a file')
   .option('--yes', 'skip the token-estimate confirmation for --suggest')
   .option('--json', 'output the raw stats as JSON')
+  .option('--html [file]', 'write the report as a styled HTML page')
   .addHelpText(
     'after',
     `
@@ -708,11 +799,20 @@ Examples:
       since?: string;
       includeSubagents?: boolean;
       suggest?: string;
+      faq?: boolean | string;
       yes?: boolean;
       model?: string;
       promptFile?: string;
       json?: boolean;
+      html?: boolean | string;
     }) => {
+      if (opts.faq) {
+        const repoRoot = resolveRepoRoot(typeof opts.faq === 'string' ? opts.faq : process.cwd());
+        // repo-scoped scan: the newest-overall window must be wide enough to
+        // reach this repo's sessions among everything else
+        await writeFaq(repoRoot, Math.max(Number(opts.limit), 300));
+        return;
+      }
       const sessions = await loadSessionsInScope(opts);
       if (!sessions.length) throw new Error('No sessions in scope — relax --since/--agent/--limit');
       const projectDirs = [...new Set(sessions.map((s) => s.cwd).filter((c): c is string => !!c))];
@@ -728,7 +828,12 @@ Examples:
         console.log(JSON.stringify(stats, null, 2));
         return;
       }
-      console.log(renderDistillStats(stats));
+      let body = renderDistillStats(stats);
+      if (!opts.suggest) {
+        await deliver('distill', 'distill — recurrence stats', body, stats, opts);
+        return;
+      }
+      if (!opts.html) console.log(body);
 
       if (opts.suggest) {
         if (opts.suggest !== 'claude' && opts.suggest !== 'codex') {
@@ -746,8 +851,14 @@ Examples:
           yes: opts.yes,
         });
         if (!approved) return;
-        console.log(`\n— asking ${opts.suggest} for recommendations…\n`);
-        console.log(await runSuggest(stats, { backend, model: opts.model, template }));
+        console.log(`\n— asking ${opts.suggest} for recommendations…`);
+        const recommendations = await runSuggest(stats, { backend, model: opts.model, template });
+        if (opts.html) {
+          body += `\n\nRecommendations (${backend}):\n\n${recommendations}`;
+          await deliver('distill', 'distill — recurrence stats + recommendations', body, stats, opts);
+        } else {
+          console.log('\n' + recommendations);
+        }
       }
     },
   );

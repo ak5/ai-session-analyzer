@@ -31,6 +31,13 @@ export function jaccard(a: Set<string>, b: Set<string>): number {
 
 export type ClusterKind = 'question' | 'correction' | 'directive';
 
+export interface ClusterMemberRef {
+  agent: string;
+  sessionId: string;
+  stepId: string;
+  timestamp?: string;
+}
+
 export interface PromptCluster {
   kind: ClusterKind;
   /** Preview of the longest member — the fullest phrasing of the recurring ask. */
@@ -41,6 +48,8 @@ export interface PromptCluster {
   totalOutputTokens: number;
   totalToolCalls: number;
   examples: string[];
+  /** Up to 5 member (session, step) refs — enough to re-read answers from transcripts. */
+  memberRefs: ClusterMemberRef[];
   firstSeen?: string;
   lastSeen?: string;
 }
@@ -104,6 +113,12 @@ export function clusterPrompts(signals: StepSignal[], options: ClusterOptions = 
         totalOutputTokens: c.members.reduce((n, m) => n + m.outputTokens, 0),
         totalToolCalls: c.members.reduce((n, m) => n + m.toolCalls, 0),
         examples: c.members.slice(0, 3).map((m) => m.promptPreview),
+        memberRefs: c.members.slice(0, 5).map((m) => ({
+          agent: m.agent,
+          sessionId: m.sessionId,
+          stepId: m.stepId,
+          timestamp: m.timestamp,
+        })),
         firstSeen: timestamps[0],
         lastSeen: timestamps.at(-1),
       };

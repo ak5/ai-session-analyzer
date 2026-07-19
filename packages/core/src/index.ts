@@ -1,3 +1,5 @@
+export * from './pricing.js';
+
 export type AgentKind = 'claude' | 'codex';
 
 export interface UsageTotals {
@@ -344,6 +346,192 @@ export async function readLastJsonlObjects(
   } finally {
     await handle.close();
   }
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+export type ReportBlock =
+  | { kind: 'table'; header: string[]; rows: string[][]; numeric: boolean[] }
+  | { kind: 'heading'; text: string }
+  | { kind: 'lint'; severity: string; text: string }
+  | { kind: 'lines'; lines: string[] };
+
+const RULE_RE = /^\s*-+(\s+-+)+\s*$/;
+const HEADING_RE = /^[A-Z][^\n]{0,79}:$/;
+const LINT_RE = /^\s*\[(warn|info)\]\s?(.*)$/;
+
+function sliceColumns(line: string, spans: Array<[number, number]>): string[] {
+  return spans.map(([from, to], i) =>
+    (i === spans.length - 1 ? line.slice(from) : line.slice(from, to)).trim(),
+  );
+}
+
+/**
+ * Parse asa's column-aligned text reports into structure: the dash rule under
+ * a header row defines column extents, so cells may contain spaces safely.
+ */
+export function parseReportBlocks(body: string): ReportBlock[] {
+  const lines = body.split('\n');
+  const blocks: ReportBlock[] = [];
+  let pending: string[] = [];
+  const flush = () => {
+    while (pending.length && pending[0] === '') pending.shift();
+    while (pending.length && pending.at(-1) === '') pending.pop();
+    if (pending.length) blocks.push({ kind: 'lines', lines: pending });
+    pending = [];
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    // table: a rule line under a header row defines the columns
+    if (i + 1 < lines.length && RULE_RE.test(lines[i + 1]!) && line.trim()) {
+      const rule = lines[i + 1]!;
+      const spans: Array<[number, number]> = [];
+      for (const match of rule.matchAll(/-+/g)) {
+        spans.push([match.index, match.index + match[0].length]);
+      }
+      const header = sliceColumns(line, spans);
+      const rows: string[][] = [];
+      let j = i + 2;
+      for (; j < lines.length && lines[j]!.trim() !== ''; j++) {
+        rows.push(sliceColumns(lines[j]!, spans));
+      }
+      const numeric = spans.map((_, col) => {
+        const cells = rows.map((r) => r[col] ?? '').filter((c) => c !== '');
+        if (!cells.length) return false;
+        const numish = cells.filter((c) => /\d/.test(c) && /^[\d,.%+\-—()\/:s ]*$/.test(c));
+        return numish.length / cells.length >= 0.6;
+      });
+      flush();
+      blocks.push({ kind: 'table', header, rows, numeric });
+      i = j - 1;
+      continue;
+    }
+    if (HEADING_RE.test(line)) {
+      flush();
+      blocks.push({ kind: 'heading', text: line.slice(0, -1) });
+      continue;
+    }
+    const lint = LINT_RE.exec(line);
+    if (lint) {
+      flush();
+      blocks.push({ kind: 'lint', severity: lint[1]!, text: lint[2]! });
+      continue;
+    }
+    pending.push(line);
+  }
+  flush();
+  return blocks;
+}
+
+function renderBlock(block: ReportBlock): string {
+  switch (block.kind) {
+    case 'heading':
+      return `<h2>${escapeHtml(block.text)}</h2>`;
+    case 'lint':
+      return `<p class="lint"><span class="badge ${block.severity}">${block.severity}</span> <span class="warntext">${escapeHtml(block.text)}</span></p>`;
+    case 'table': {
+      const ths = block.header
+        .map((h, i) => `<th${block.numeric[i] ? ' class="num"' : ''}>${escapeHtml(h)}</th>`)
+        .join('');
+      const trs = block.rows
+        .map(
+          (row) =>
+            '<tr>' +
+            row
+              .map((c, i) => `<td${block.numeric[i] ? ' class="num"' : ''}>${escapeHtml(c)}</td>`)
+              .join('') +
+            '</tr>',
+        )
+        .join('\n');
+      return `<div class="tbl"><table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table></div>`;
+    }
+    case 'lines': {
+      const rendered = block.lines
+        .map((line) => {
+          const escaped = escapeHtml(line);
+          if (/^\s*(e\.g\.|·|\+ |\()/.test(line) || /^_.*_$/.test(line.trim())) {
+            return `<span class="dim">${escaped}</span>`;
+          }
+          return escaped;
+        })
+        .join('\n');
+      return `<pre>${rendered}</pre>`;
+    }
+  }
+}
+
+/**
+ * Render a text report as a self-contained HTML page. Terminal-native by
+ * commitment (see DESIGN.md): single monospace family, dual light/dark OKLCH
+ * theme, and the column-aligned tables parsed into real <table> semantics
+ * with numeric right-alignment and sticky headers. Zero dependencies, no JS.
+ */
+export function renderHtmlReport(options: {
+  title: string;
+  command: string;
+  body: string;
+  generatedAt?: string;
+}): string {
+  const generated = options.generatedAt ?? new Date().toISOString();
+  const content = parseReportBlocks(options.body).map(renderBlock).join('\n');
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(options.title)}</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: light-dark(oklch(0.98 0.003 210), oklch(0.18 0.008 220));
+    --surface: light-dark(oklch(0.955 0.004 210), oklch(0.22 0.01 220));
+    --ink: light-dark(oklch(0.24 0.012 220), oklch(0.88 0.008 210));
+    --muted: light-dark(oklch(0.45 0.015 220), oklch(0.68 0.012 210));
+    --accent: light-dark(oklch(0.48 0.09 210), oklch(0.75 0.09 205));
+    --warn: light-dark(oklch(0.5 0.13 65), oklch(0.78 0.13 75));
+    --info: light-dark(oklch(0.48 0.1 250), oklch(0.75 0.09 245));
+    --rule: light-dark(oklch(0.87 0.006 210), oklch(0.32 0.01 220));
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto; padding: 2.5rem 1.25rem 4rem; max-width: 110ch;
+    background: var(--bg); color: var(--ink);
+    font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  header { margin-bottom: 2rem; }
+  h1 { font-size: 1.25rem; margin: 0 0 .35rem; letter-spacing: -0.01em; text-wrap: balance; }
+  .meta { color: var(--muted); font-size: .85em; }
+  .meta b { color: var(--accent); font-weight: 600; }
+  h2 { font-size: .9rem; color: var(--accent); margin: 1.75rem 0 .5rem; }
+  pre { margin: .35rem 0; white-space: pre; overflow-x: auto; }
+  .dim { color: var(--muted); }
+  .lint { margin: .4rem 0; padding-left: 1ch; }
+  .badge { font-weight: 700; }
+  .badge.warn { color: var(--warn); }
+  .badge.info { color: var(--info); }
+  .tbl { margin: .5rem 0 1rem; max-height: 70vh; overflow: auto; border: 1px solid var(--rule); }
+  table { border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; min-width: 100%; }
+  th, td { text-align: left; padding: .3rem .9ch; white-space: nowrap; }
+  th { position: sticky; top: 0; background: var(--surface); color: var(--muted);
+       font-weight: 600; border-bottom: 1px solid var(--rule); }
+  td { border-bottom: 1px solid color-mix(in oklch, var(--rule), transparent 55%); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: color-mix(in oklch, var(--surface), transparent 40%); }
+  .num { text-align: right; }
+</style>
+</head>
+<body>
+<header>
+<h1>${escapeHtml(options.title)}</h1>
+<div class="meta"><b>asa ${escapeHtml(options.command)}</b> · generated ${escapeHtml(generated)}</div>
+</header>
+${content}
+</body>
+</html>
+`;
 }
 
 /** Parse a JSONL buffer tolerantly: unparseable lines are skipped. */

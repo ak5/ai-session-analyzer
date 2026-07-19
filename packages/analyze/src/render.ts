@@ -1,6 +1,7 @@
 import {
   formatDuration,
   formatNumber as fmt,
+  formatUsd,
   renderTable as table,
   shortId,
   type UsageTotals,
@@ -44,6 +45,18 @@ export function renderReport(report: AnalysisReport): string {
     out.push(`human: ${parts.join(' · ')}`);
   }
   out.push(`tokens: ${fmtUsage(session.usage)} — total ${fmt(session.usage.totalTokens)}`);
+  if (report.cost) {
+    const c = report.cost;
+    const parts: string[] = [];
+    if (c.pricedModels.length) parts.push(`est. cost ${formatUsd(c.usd)} (API list price)`);
+    if (c.unpricedModels.length) {
+      parts.push(
+        `${c.pricedModels.length ? 'excludes' : 'no pricing for'} ${c.unpricedModels.join(', ')}` +
+          ` — add rates to ~/.asa/pricing.json`,
+      );
+    }
+    out.push(`cost: ${parts.join(' · ')}`);
+  }
   const v = session.contentVolume;
   const volumeTotal = v.humanPromptChars + v.harnessInjectedChars + v.toolResultChars;
   if (volumeTotal > 0) {

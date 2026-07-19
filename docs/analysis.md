@@ -87,6 +87,14 @@ Two layers:
    `packages/distill/src/suggest-template.ts`; override per-run with
    `--prompt-file`.
 
+3. **`--faq [repo]`** — writes `docs/dev-faq.md` from recurring question
+   clusters, with answers **extracted from the transcripts** (the member
+   matching the representative phrasing is preferred; capped at 1500 chars) —
+   distillation, not generation; no model call. Entries carry a stable
+   question-hash marker; regeneration appends new questions and never rewrites
+   existing entries, so human edits survive. Scans a wide newest-session window
+   (≥300) since it filters to one repo's cwd.
+
 **Self-hygiene invariants:**
 
 - Every prompt asa sends to a model is stamped `[asa-internal]`. Sessions whose

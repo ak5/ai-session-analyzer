@@ -169,6 +169,18 @@ describe.skipIf(!claudeId)(`claude e2e ${claudeId ?? `(${setupHint})`}`, () => {
     }
   });
 
+  it('writes a styled HTML report with --html', async () => {
+    const { tmpdir } = await import('node:os');
+    const out = join(tmpdir(), `asa-e2e-${Date.now()}.html`);
+    const res = await asa('analyze', '-c', claudeId!, '--html', out);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toContain('wrote');
+    const html = readFileSync(out, 'utf8');
+    expect(html).toContain('<!doctype html>');
+    expect(html).toContain(claudeId!.slice(0, 8));
+    rmSync(out, { force: true });
+  });
+
   it('fork --at --dry-run writes nothing', async () => {
     const analyzed = await asa('analyze', '--claude', claudeId!, '--json');
     const stepId = JSON.parse(analyzed.stdout).session.steps[0].id as string;
@@ -297,6 +309,12 @@ describe.skipIf(!claudeId && !codexId)(`distill e2e (${setupHint})`, () => {
     expect(res.stderr).toContain('pass --yes to proceed');
     // the model call must not have happened
     expect(res.stdout).not.toContain('asking claude');
+  });
+
+  it('--faq reports gracefully when no questions recur', async () => {
+    const res = await asa('distill', '--faq', repoRoot);
+    expect(res.code).toBe(0);
+    expect(res.stdout).toMatch(/No recurring questions|no extractable answers|added \d+ entries/);
   });
 
   it('rejects unknown --suggest backends', async () => {

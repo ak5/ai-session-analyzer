@@ -44,4 +44,17 @@ describe('compareReports / renderComparison', () => {
     expect(text).toContain('+50');
     expect(text).toContain('50%');
   });
+
+  it('adds a dollar-formatted cost row when a session has priced usage', () => {
+    const priced = session(1_000_000, 1);
+    priced.models = ['claude-haiku-4-5'];
+    priced.modelUsage = { 'claude-haiku-4-5': { apiCalls: 1, outputTokens: 1_000_000 } };
+    const withCost = analyzeSession(priced);
+    const rows = compareReports(withCost, a);
+    const costRow = rows.find((r) => r.metric === 'est. cost (USD)')!;
+    expect(costRow).toMatchObject({ a: 5, b: 0, usd: true });
+    expect(renderComparison(withCost, a)).toContain('5.00');
+    // both sides unpriced → no cost row
+    expect(compareReports(a, b).find((r) => r.metric === 'est. cost (USD)')).toBeUndefined();
+  });
 });
