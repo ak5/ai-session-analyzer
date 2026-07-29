@@ -43,8 +43,7 @@ conversation records: `uuid`, `parentUuid` (the DAG), `sessionId`, `cwd`, `gitBr
 - `/compact <hint>` mechanism (tested via an A/B on identical fork pairs — see
   `asa fork --at`): the CLI appends a summarization instruction (with the hint
   as custom instructions) to the conversation as a user message and has the
-  session's model write the summary — works headless (`claude -p --resume <id>
-  "/compact <hint>"`, stdout empty, boundary+summary appended). The hint biases
+  session's model write the summary — works headless (`claude -p --resume <id> "/compact <hint>"`, stdout empty, boundary+summary appended). The hint biases
   section *content* — hinted topics dominate "Key Technical Concepts" and
   "Current Work", de-hinted facts get dropped from them entirely — but the
   9-section template itself is fixed. In one observed run the internal
@@ -89,6 +88,21 @@ forks/subagents, `thread_source: user|subagent`), `turn_context` (per-turn `mode
   record at the head of a crafted rollout is ignored, while plain
   `response_item` messages load fine. `codex exec resume` needs the FULL session
   id — an unknown/short id silently starts a fresh session instead of erroring.
+
+## Workspace path migration
+
+Rust V2 treats native transcript formats as read-only except for explicit
+`fork` creation and `sessions migrate-path`. Migration recognizes only string
+values under `cwd`, `workspace`, `workspace_path`, and `project_path`, including
+nested metadata objects. It replaces an exact old path or descendant prefix and
+preserves every other JSON value. Malformed JSONL lines and non-JSON Claude
+sidecars are copied verbatim.
+
+Claude's project directory is path-derived, so affected main transcripts and
+their session sidecars move beneath the slug for the rewritten cwd. Codex
+rollout paths are date-derived and remain in place; their embedded cwd and
+matching `session_index.jsonl` fields change. Claude `history.jsonl` receives
+the same recognized-field rewrite when applicable.
 
 ## CLI surface used by `asa`
 

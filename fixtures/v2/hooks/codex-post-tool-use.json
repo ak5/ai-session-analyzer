@@ -1,0 +1,12 @@
+{
+  "session_id": "codex-fixture-session",
+  "cwd": "/sanitized/project",
+  "hook_event_name": "PostToolUse",
+  "turn_id": "turn-fixture",
+  "tool_call_id": "call_fixture",
+  "tool_name": "exec_command",
+  "tool_input": {
+    "cmd": "redacted"
+  },
+  "tool_output": "redacted"
+}

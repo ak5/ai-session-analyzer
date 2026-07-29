@@ -1,0 +1,30 @@
+[package]
+name = "asa-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+asa-adapters = { path = "../asa-adapters" }
+asa-analysis = { path = "../asa-analysis" }
+asa-core = { path = "../asa-core" }
+asa-otel = { path = "../asa-otel" }
+asa-store = { path = "../asa-store" }
+axum.workspace = true
+opentelemetry-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tonic.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+time.workspace = true
+
+[lints]
+workspace = true
