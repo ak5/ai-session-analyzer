@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -31,11 +31,11 @@ jobs:
       - run: pnpm e2e:setup --synthetic # format-faithful fixtures, no auth
       - run: pnpm test:e2e # drives the built asa binary end-to-end
 
-  # main only accepts PRs from dev. Branch protection can't enforce a PR's SOURCE
-  # branch — only that a check passes — so fail loudly when a non-dev branch
-  # targets main (feature branches land on dev first, then dev → main).
-  main-from-dev:
-    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref != 'dev' }}
+  # main accepts releases from dev and reviewed production repairs from
+  # hotfix/*. Branch protection cannot enforce a PR's source branch, so fail
+  # loudly for every other path.
+  main-source-policy:
+    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref != 'dev' && !startsWith(github.head_ref, 'hotfix/') }}
     runs-on: ubuntu-latest
     steps:
-      - run: 'echo "::error::main only accepts PRs from dev (got ${{ github.head_ref }})"; exit 1'
+      - run: 'echo "::error::main accepts PRs only from dev or hotfix/* (got ${{ github.head_ref }})"; exit 1'

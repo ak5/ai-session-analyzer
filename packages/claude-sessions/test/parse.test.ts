@@ -409,3 +409,48 @@ describe('forkClaudeSessionAtStep', () => {
     expect(fork.copiedSubagents).toBe(0);
   });
 });
+
+describe('craftClaudeContextFork', () => {
+  it('writes compact_boundary + digest summary + verbatim re-rooted tail', async () => {
+    const { craftClaudeContextFork } = await import('../src/context-fork.js');
+    const dir = await mkdtemp(join(tmpdir(), 'asa-ctx-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+
+    const fork = await craftClaudeContextFork(filePath, { keepLastSteps: 1 });
+    expect(fork.digestedSteps).toBe(1);
+    expect(fork.keptSteps).toBe(1);
+
+    const records = parseJsonl<ClaudeRecord>(await readFile(fork.newFilePath, 'utf8'));
+    // shape mimics native post-compaction transcripts
+    expect(records[0]).toMatchObject({
+      type: 'system',
+      subtype: 'compact_boundary',
+      compactMetadata: { trigger: 'manual' },
+    });
+    const summary = records[1]!;
+    expect(summary.isCompactSummary).toBe(true);
+    const digest = summary.message!.content as string;
+    expect(digest).toContain('first prompt'); // verbatim, not paraphrased
+    expect(digest).toContain('thinking about it'); // step conclusion
+    expect(digest).not.toContain('second prompt'); // kept verbatim instead
+    // tail: step 2's records, re-rooted onto the summary record
+    expect(records[2]).toMatchObject({ uuid: 'u3', parentUuid: summary.uuid });
+    expect(records.every((r) => r.sessionId === fork.newSessionId)).toBe(true);
+    expect(records.some((r) => r.type === 'last-prompt')).toBe(false);
+    // the fork parses as a session whose remaining step is the kept one
+    const forked = normalizeClaudeRecords(records, fork.newFilePath);
+    expect(forked.steps.map((s) => s.id)).toEqual(['u3']);
+  });
+
+  it('digests everything when keepLastSteps is 0', async () => {
+    const { craftClaudeContextFork } = await import('../src/context-fork.js');
+    const dir = await mkdtemp(join(tmpdir(), 'asa-ctx-'));
+    const filePath = join(dir, `${SESSION_ID}.jsonl`);
+    await writeFile(filePath, fixtureRecords().map((r) => JSON.stringify(r)).join('\n'));
+    const fork = await craftClaudeContextFork(filePath, { keepLastSteps: 0 });
+    const records = parseJsonl<ClaudeRecord>(await readFile(fork.newFilePath, 'utf8'));
+    expect(records).toHaveLength(2); // boundary + summary only
+    expect((records[1]!.message!.content as string)).toContain('second prompt');
+  });
+});

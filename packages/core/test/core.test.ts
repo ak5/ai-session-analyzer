@@ -106,6 +106,45 @@ describe('shortId', () => {
   });
 });
 
+describe('buildContextDigest hint', () => {
+  it('states the hint and weights matching steps 4x, non-matching half', async () => {
+    const { buildContextDigest, emptyContentVolume, emptyInteractionCounts, emptyUsage } =
+      await import('../src/index.js');
+    const step = (i: number, prompt: string) => ({
+      id: `s${i}`,
+      index: i,
+      kind: 'prompt' as const,
+      promptText: prompt,
+      apiCalls: 1,
+      toolCalls: [],
+      usage: emptyUsage(),
+    });
+    const session = {
+      agent: 'claude' as const,
+      id: 'x',
+      filePath: '/x.jsonl',
+      models: [],
+      compactions: 0,
+      usage: emptyUsage(),
+      subagents: [],
+      interactions: emptyInteractionCounts(),
+      contentVolume: emptyContentVolume(),
+      steps: [step(0, 'set up the database schema'), step(1, 'tweak the css colors')],
+    };
+    const longResponse = 'r'.repeat(1000);
+    const digest = await buildContextDigest(session, async () => longResponse, {
+      maxResponseChars: 100,
+      hint: 'database migrations',
+    });
+    expect(digest).toContain("Focus for this continuation (per the fork's hint): database migrations");
+    const lines = digest.split('\n');
+    const dbLine = lines.find((l) => l.startsWith('1. r'))!;
+    const cssLine = lines.find((l) => l.startsWith('2. r'))!;
+    expect(dbLine.length).toBeGreaterThan(390); // 4× budget
+    expect(cssLine.length).toBeLessThan(60); // half budget
+  });
+});
+
 describe('pricing', () => {
   it('resolves models by longest prefix after stripping dates and effort suffixes', async () => {
     const { BUILTIN_PRICING, resolveModelRates } = await import('../src/pricing.js');

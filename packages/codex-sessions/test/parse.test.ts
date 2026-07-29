@@ -232,6 +232,48 @@ describe('normalizeCodexLines', () => {
     await expect(forkCodexSessionAtStep(filePath, 'nope')).rejects.toThrow(/No turn with step id/);
   });
 
+  it('crafts a context fork: meta + compacted replacement history + verbatim tail', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'asa-codex-ctx-'));
+    const filePath = join(dir, `rollout-2026-07-17T10-00-00-${SESSION_ID}.jsonl`);
+    const source = fixtureLines();
+    source.splice(7, 0, {
+      timestamp: '2026-07-17T10:00:06.500Z',
+      type: 'event_msg',
+      payload: { type: 'agent_message', message: 'All done — files listed.' },
+    });
+    await writeFile(filePath, source.map((l) => JSON.stringify(l)).join('\n'));
+
+    const { craftCodexContextFork } = await import('../src/context-fork.js');
+    const fork = await craftCodexContextFork(filePath, { keepLastSteps: 1 });
+    expect(fork.digestedSteps).toBe(1);
+    expect(fork.keptSteps).toBe(1);
+
+    const { parseJsonl } = await import('@asa/core');
+    const lines = parseJsonl<CodexLine>(await (await import('node:fs/promises')).readFile(fork.newFilePath, 'utf8'));
+    expect(lines[0]).toMatchObject({
+      type: 'session_meta',
+      payload: { id: fork.newSessionId, forked_from_id: SESSION_ID },
+    });
+    expect(lines[1]!.type).toBe('turn_context');
+    // crafted history is emitted as response_item messages — the records codex
+    // resume actually rebuilds context from (event_msg is only the UI stream)
+    const history = lines.filter(
+      (l) => l.type === 'response_item' && (l.payload as { role?: string }).role === 'user',
+    );
+    const texts = JSON.stringify(history);
+    expect(texts).toContain('do the thing'); // step-1 prompt verbatim
+    expect(texts).toContain('All done — files listed.'); // step-1 conclusion in the digest
+    expect(texts).not.toContain('encrypted_content');
+    // tail keeps the kept turn's user_message (it precedes task_started)
+    const tailStart = lines.findIndex((l) => (l.payload as { type?: string })?.type === 'user_message');
+    expect(lines[tailStart + 1]).toMatchObject({ type: 'event_msg', payload: { type: 'task_started', turn_id: 'turn-def' } });
+
+    const forked = normalizeCodexLines(lines, fork.newFilePath);
+    expect(forked.forkedFromId).toBe(SESSION_ID);
+    expect(forked.steps.map((s) => s.id)).toEqual(['turn-def']);
+    expect(forked.steps[0]!.promptText).toBe('now the other thing');
+  });
+
   it('links tool calls and classifies MCP tools', () => {
     const step1 = session.steps[0]!;
     expect(step1.toolCalls[0]!.name).toBe('exec');

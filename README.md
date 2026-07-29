@@ -1,6 +1,42 @@
 # asa — ai session analyzer
 
 [![test](https://github.com/ak5/ai-session-analyzer/actions/workflows/test.yml/badge.svg?branch=dev)](https://github.com/ak5/ai-session-analyzer/actions/workflows/test.yml)
+[![Rust](https://github.com/ak5/ai-session-analyzer/actions/workflows/rust.yml/badge.svg?branch=dev)](https://github.com/ak5/ai-session-analyzer/actions/workflows/rust.yml)
+
+> **V2 foundation:** ASA is being replaced by one Rust executable centered on
+> passive local agent observability. The TypeScript implementation below remains
+> temporarily as the behavioral oracle for features classified for later port
+> or redesign; it is not a runtime dependency of V2.
+
+## V2 quick start
+
+Rust 1.88 is pinned by `rust-toolchain.toml`. Build and verify the distributed
+implementation:
+
+```sh
+cargo test --workspace
+cargo build --locked --release -p asa-cli
+target/release/asa --help
+target/release/asa daemon run          # foreground development
+target/release/asa hooks install --all # passive project observers
+```
+
+V2 provides authenticated OTLP ingestion, durable recovery, Claude Code and
+Codex adapters, compressed session documents, DuckDB analytics, privacy and
+retention controls, `sessions list/show`, `analyze`, `compare`, and native
+session `resume`, whole/mid-session `fork`, crafted-context fork, and local
+deterministic `distill` and `prompter` reports, plus launchd/systemd user
+supervision. It also safely repairs native workspace attribution after a
+repository move with `sessions migrate-path`. See
+[V2 operations](docs/v2-operations.md),
+[verification](docs/v2-verification.md), and the
+[migration ADR](docs/adr/001-rust-rewrite.md).
+
+Documentation starts at [docs/index.md](docs/index.md). Contributors should read
+[CONTRIBUTING.md](CONTRIBUTING.md), and security reports follow
+[SECURITY.md](SECURITY.md).
+
+## V1 reference implementation
 
 Your AI coding sessions are a dataset. **asa** turns the transcripts that Claude Code
 and Codex CLI already write to disk into something you can **inspect** (tokens, steps,
@@ -14,7 +50,7 @@ against `~/.claude` and `~/.codex`; nothing leaves your machine except two expli
 opt-in flags (`--deep`, `--suggest`), which send short prompt excerpts through your own
 `claude`/`codex` CLIs to your own accounts.
 
-## Quick start
+## V1 quick start
 
 ```sh
 git clone https://github.com/ak5/ai-session-analyzer
@@ -75,7 +111,7 @@ dark/light aware, shareable). `asa <command> --help` documents every flag, and
 | `asa analyze` | where did this session go? — tokens, steps, tools, MCP, subagents, content volume |
 | `asa compare` | what changed between these two? — metric deltas: original vs fork, or cross-agent |
 | `asa resume` | re-enter a session in its original cwd (wraps `claude --resume` / `codex resume`) |
-| `asa fork` | branch a session — whole-session, or `--at <stepId>` to fork mid-conversation |
+| `asa fork` | branch a session — whole-session, `--at <stepId>` mid-conversation, or `--context` for a crafted-context fork |
 | `asa distill` | what should stop being typed by hand? — recurring prompts, questions, tool sequences; `--suggest` for model recommendations, `--faq` to write a dev-faq |
 | `asa prompter` | how do I prompt? — specificity, corrections, archetype, lint, workflow hygiene |
 | `asa project` | one repo's whole agent history — spend, steering, instruction surfaces |
@@ -134,6 +170,30 @@ can exceed a smaller model's window (`--model haiku` on a 200k+ context replies
 `asa resume` covers the non-fork cases: interactive re-entry in the session's
 original cwd, or headless (`asa resume -o <id> -p "continue"` wraps
 `codex exec resume` — scriptable).
+
+## Fork with a crafted context (beat /compact at its own game)
+
+Native compaction is a lossy paraphrase: Claude's `/compact` spends a ~2-minute
+full-context summarization call (~1M billed tokens) to shrink ~977k → ~18k,
+throwing away your literal words; Codex keeps your prompts verbatim but hides its
+bridge summary in an encrypted blob. `asa fork -c <id> --context` crafts the fork's
+history instead — mimicking each agent's own post-compaction transcript shape, but
+with a deterministic digest: **every prompt verbatim, each step's concluding
+response, files touched** — while dropping tool results and harness bulk (typically
+99% of content). Instant, zero tokens spent, inspectable in the transcript, and the
+original session is untouched. `--keep N` holds the last N steps fully verbatim, and
+`--hint "<focus>"` works like `/compact <instructions>` — except deterministically:
+matching steps keep 4× the concluding-response detail, non-matching get half, and
+prompts stay verbatim either way (native compact's hint can drop de-emphasized
+facts from the summary entirely — we tested it A/B on identical fork pairs).
+
+Live proof, both agents: a 307M-token Claude session crafted to ~8.5k tokens of
+context — the resumed fork *quoted the user's exact words from step 8 of 50*
+("we can call it ensure-plugins or something and it can be idempotent…"), which the
+session's own native compact summary had paraphrased away. Same on Codex: a 9.1M-token
+session's crafted fork recalled a verbatim quote, a repo name, and a typo'd path
+from digested steps. Same stability caveat as `--at`: crafted transcripts rely on
+resume accepting external files — treat forks as disposable.
 
 ## Distill: stop typing it by hand
 
@@ -255,6 +315,76 @@ agent (OpenCode, Gemini CLI, …) is a sessions package + one registry entry:
 
 ## Development
 
+Run the Rust V2 checks:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --locked --release --workspace
+```
+
+Resume a discovered native session without changing its transcript:
+
+```sh
+target/release/asa resume <session-id-or-prefix> --dry-run
+target/release/asa resume <session-id-or-prefix>
+target/release/asa resume <session-id-or-prefix> --prompt "continue"
+```
+
+Fork a complete native session through the installed agent CLI:
+
+```sh
+target/release/asa fork <session-id-or-prefix> --dry-run
+target/release/asa fork <session-id-or-prefix>
+target/release/asa fork <session-id-or-prefix> --prompt "try approach B"
+```
+
+Fork after a specific step without launching the agent:
+
+```sh
+target/release/asa fork <session-id-or-prefix> --at <step-id> --no-launch
+```
+
+Craft a deterministic compact history while retaining a recent verbatim tail:
+
+```sh
+target/release/asa fork <session-id-or-prefix> --context --keep 2 --no-launch
+target/release/asa fork <session-id-or-prefix> --context --hint "database migration"
+```
+
+Mine recurring behavior locally across native sessions:
+
+```sh
+target/release/asa distill --since 30d
+target/release/asa distill --agent codex --limit 100 --json
+```
+
+Inspect local prompting patterns:
+
+```sh
+target/release/asa prompter --since 30d
+target/release/asa prompter --agent claude --json
+```
+
+Inspect project history and longitudinal patterns:
+
+```sh
+target/release/asa project .
+target/release/asa efficacy . --window 10
+target/release/asa intents --since 60d
+target/release/asa models --since 90d
+```
+
+Preflight and apply a native-session workspace path migration:
+
+```sh
+target/release/asa sessions migrate-path /old/repo /new/repo --dry-run
+target/release/asa sessions migrate-path /old/repo /new/repo
+```
+
+Run the retained TypeScript V1 checks:
+
 ```sh
 pnpm install
 pnpm build        # tsc -b project references + esbuild bundle of the CLI
@@ -266,8 +396,8 @@ E2E fixtures come from `pnpm e2e:setup` (real `claude -p`/`codex exec` runs into
 gitignored repo-local homes) or `--synthetic` (no auth, no cost). Auth bridging and
 safety invariants: [docs/testing.md](docs/testing.md).
 
-Published artifact is `@ak5/asa` only — the CLI, bundled, zero runtime deps.
-Bundling rationale, tarball verification, release steps:
+V1 publishes `@ak5/asa`; V2 publishes native release archives. Packaging,
+verification, and staged-release instructions live in
 [docs/publishing.md](docs/publishing.md).
 
 ## Roadmap
