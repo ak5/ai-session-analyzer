@@ -1,0 +1,13 @@
+{
+  "session_id": "claude-fixture-session",
+  "cwd": "/sanitized/project",
+  "hook_event_name": "PostToolUse",
+  "tool_use_id": "toolu_fixture",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "redacted"
+  },
+  "tool_response": {
+    "content": "redacted"
+  }
+}

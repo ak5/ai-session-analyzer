@@ -1,0 +1,11 @@
+{
+  "session_id": "claude-fixture-session",
+  "transcript_path": "/sanitized/.claude/projects/example/claude-fixture-session.jsonl",
+  "cwd": "/sanitized/project",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "Implemented and verified the requested change.",
+  "future_optional_field": {
+    "accepted": true
+  }
+}

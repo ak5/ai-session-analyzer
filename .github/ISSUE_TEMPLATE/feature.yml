@@ -1,0 +1,41 @@
+name: Feature proposal
+description: Propose one outcome and identify its V1/V2 migration boundary.
+title: "feature: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should a user be able to accomplish?
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Why it matters
+      description: Describe the current limitation and who it affects.
+    validations:
+      required: true
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Likely implementation boundary
+      options:
+        - Rust V2
+        - TypeScript V1 reference
+        - Migration or parity work
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints and evidence
+      description: Include privacy, native-agent, compatibility, or performance constraints.
+  - type: textarea
+    id: exclusions
+    attributes:
+      label: Explicit exclusions
+      description: What should this proposal not attempt?

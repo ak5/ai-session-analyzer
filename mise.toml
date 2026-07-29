@@ -1,0 +1,17 @@
+[tools]
+node = "22"
+pnpm = "10.34.5"
+
+[tasks.check-all]
+description = "Run the complete TypeScript V1 and Rust V2 verification gates"
+run = [
+  "pnpm install --frozen-lockfile",
+  "pnpm build",
+  "pnpm test",
+  "pnpm e2e:setup --synthetic",
+  "pnpm test:e2e",
+  "cargo fmt --all -- --check",
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "cargo test --workspace",
+  "cargo build --locked --release --workspace",
+]

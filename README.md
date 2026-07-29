@@ -1,6 +1,42 @@
 # asa — ai session analyzer
 
 [![test](https://github.com/ak5/ai-session-analyzer/actions/workflows/test.yml/badge.svg?branch=dev)](https://github.com/ak5/ai-session-analyzer/actions/workflows/test.yml)
+[![Rust](https://github.com/ak5/ai-session-analyzer/actions/workflows/rust.yml/badge.svg?branch=dev)](https://github.com/ak5/ai-session-analyzer/actions/workflows/rust.yml)
+
+> **V2 foundation:** ASA is being replaced by one Rust executable centered on
+> passive local agent observability. The TypeScript implementation below remains
+> temporarily as the behavioral oracle for features classified for later port
+> or redesign; it is not a runtime dependency of V2.
+
+## V2 quick start
+
+Rust 1.88 is pinned by `rust-toolchain.toml`. Build and verify the distributed
+implementation:
+
+```sh
+cargo test --workspace
+cargo build --locked --release -p asa-cli
+target/release/asa --help
+target/release/asa daemon run          # foreground development
+target/release/asa hooks install --all # passive project observers
+```
+
+V2 provides authenticated OTLP ingestion, durable recovery, Claude Code and
+Codex adapters, compressed session documents, DuckDB analytics, privacy and
+retention controls, `sessions list/show`, `analyze`, `compare`, and native
+session `resume`, whole/mid-session `fork`, crafted-context fork, and local
+deterministic `distill` and `prompter` reports, plus launchd/systemd user
+supervision. It also safely repairs native workspace attribution after a
+repository move with `sessions migrate-path`. See
+[V2 operations](docs/v2-operations.md),
+[verification](docs/v2-verification.md), and the
+[migration ADR](docs/adr/001-rust-rewrite.md).
+
+Documentation starts at [docs/index.md](docs/index.md). Contributors should read
+[CONTRIBUTING.md](CONTRIBUTING.md), and security reports follow
+[SECURITY.md](SECURITY.md).
+
+## V1 reference implementation
 
 Your AI coding sessions are a dataset. **asa** turns the transcripts that Claude Code
 and Codex CLI already write to disk into something you can **inspect** (tokens, steps,
@@ -14,7 +50,7 @@ against `~/.claude` and `~/.codex`; nothing leaves your machine except two expli
 opt-in flags (`--deep`, `--suggest`), which send short prompt excerpts through your own
 `claude`/`codex` CLIs to your own accounts.
 
-## Quick start
+## V1 quick start
 
 ```sh
 git clone https://github.com/ak5/ai-session-analyzer
@@ -279,6 +315,76 @@ agent (OpenCode, Gemini CLI, …) is a sessions package + one registry entry:
 
 ## Development
 
+Run the Rust V2 checks:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+cargo build --locked --release --workspace
+```
+
+Resume a discovered native session without changing its transcript:
+
+```sh
+target/release/asa resume <session-id-or-prefix> --dry-run
+target/release/asa resume <session-id-or-prefix>
+target/release/asa resume <session-id-or-prefix> --prompt "continue"
+```
+
+Fork a complete native session through the installed agent CLI:
+
+```sh
+target/release/asa fork <session-id-or-prefix> --dry-run
+target/release/asa fork <session-id-or-prefix>
+target/release/asa fork <session-id-or-prefix> --prompt "try approach B"
+```
+
+Fork after a specific step without launching the agent:
+
+```sh
+target/release/asa fork <session-id-or-prefix> --at <step-id> --no-launch
+```
+
+Craft a deterministic compact history while retaining a recent verbatim tail:
+
+```sh
+target/release/asa fork <session-id-or-prefix> --context --keep 2 --no-launch
+target/release/asa fork <session-id-or-prefix> --context --hint "database migration"
+```
+
+Mine recurring behavior locally across native sessions:
+
+```sh
+target/release/asa distill --since 30d
+target/release/asa distill --agent codex --limit 100 --json
+```
+
+Inspect local prompting patterns:
+
+```sh
+target/release/asa prompter --since 30d
+target/release/asa prompter --agent claude --json
+```
+
+Inspect project history and longitudinal patterns:
+
+```sh
+target/release/asa project .
+target/release/asa efficacy . --window 10
+target/release/asa intents --since 60d
+target/release/asa models --since 90d
+```
+
+Preflight and apply a native-session workspace path migration:
+
+```sh
+target/release/asa sessions migrate-path /old/repo /new/repo --dry-run
+target/release/asa sessions migrate-path /old/repo /new/repo
+```
+
+Run the retained TypeScript V1 checks:
+
 ```sh
 pnpm install
 pnpm build        # tsc -b project references + esbuild bundle of the CLI
@@ -290,8 +396,8 @@ E2E fixtures come from `pnpm e2e:setup` (real `claude -p`/`codex exec` runs into
 gitignored repo-local homes) or `--synthetic` (no auth, no cost). Auth bridging and
 safety invariants: [docs/testing.md](docs/testing.md).
 
-Published artifact is `@ak5/asa` only — the CLI, bundled, zero runtime deps.
-Bundling rationale, tarball verification, release steps:
+V1 publishes `@ak5/asa`; V2 publishes native release archives. Packaging,
+verification, and staged-release instructions live in
 [docs/publishing.md](docs/publishing.md).
 
 ## Roadmap

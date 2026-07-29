@@ -1,13 +1,13 @@
 name: publish
 
-# npm publish of @ak5/asa, triggered by release tags (v1.0.0-rc.5, v1.2.3).
+# npm publish of @ak5/asa, triggered by V1 release tags (v1.0.0-rc.5, v1.2.3).
 # Runs the same quality gates as CI first — a tag is not proof dev was green.
 # Needs the NPM_TOKEN repo secret (npm automation token for the @ak5 scope);
 # provenance ties the published tarball to this workflow run.
 
 on:
   push:
-    tags: ['v*']
+    tags: ['v1.*']
 
 jobs:
   publish:

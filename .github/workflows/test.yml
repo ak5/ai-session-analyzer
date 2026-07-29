@@ -31,11 +31,11 @@ jobs:
       - run: pnpm e2e:setup --synthetic # format-faithful fixtures, no auth
       - run: pnpm test:e2e # drives the built asa binary end-to-end
 
-  # main only accepts PRs from dev. Branch protection can't enforce a PR's SOURCE
-  # branch — only that a check passes — so fail loudly when a non-dev branch
-  # targets main (feature branches land on dev first, then dev → main).
-  main-from-dev:
-    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref != 'dev' }}
+  # main accepts releases from dev and reviewed production repairs from
+  # hotfix/*. Branch protection cannot enforce a PR's source branch, so fail
+  # loudly for every other path.
+  main-source-policy:
+    if: ${{ github.event_name == 'pull_request' && github.base_ref == 'main' && github.head_ref != 'dev' && !startsWith(github.head_ref, 'hotfix/') }}
     runs-on: ubuntu-latest
     steps:
-      - run: 'echo "::error::main only accepts PRs from dev (got ${{ github.head_ref }})"; exit 1'
+      - run: 'echo "::error::main accepts PRs only from dev or hotfix/* (got ${{ github.head_ref }})"; exit 1'
