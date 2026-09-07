@@ -43,7 +43,7 @@ tonic = { version = "0.14", features = ["transport"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.17", features = ["serde", "v7"] }
-zstd = "0.13"
+zstd = "0.14"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
