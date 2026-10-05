@@ -1,6 +1,6 @@
 [tools]
 node = "22"
-pnpm = "10.34.5"
+pnpm = "10.34.6"
 
 [tasks.check-all]
 description = "Run the complete TypeScript V1 and Rust V2 verification gates"
